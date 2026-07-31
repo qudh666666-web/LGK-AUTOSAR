@@ -4,6 +4,8 @@ use serde_json::{json, Value};
 use crate::daemon::client::DaVinciClient;
 use crate::ops;
 use crate::project::SessionConfig;
+use crate::vector::module_index::ModuleIndex;
+use crate::vector::template_index::read_module_definition_ref;
 
 pub struct CommandDispatcher {
     davinci: Option<DaVinciClient>,
@@ -72,8 +74,24 @@ impl CommandDispatcher {
             }
             "generate_code" => {
                 let module = optional_module(request);
-                let message = self.davinci(config)?.generate(module)?;
-                Ok(json!({"module": module, "message": message}))
+                let definition_ref = if module.eq_ignore_ascii_case("all") {
+                    None
+                } else {
+                    let modules = ModuleIndex::load(config)?;
+                    let module_info = modules.find(module)?;
+                    Some(read_module_definition_ref(
+                        &module_info.config_path,
+                        &module_info.module,
+                    )?)
+                };
+                let message = self
+                    .davinci(config)?
+                    .generate(module, definition_ref.as_deref())?;
+                Ok(json!({
+                    "module": module,
+                    "definition_ref": definition_ref,
+                    "message": message
+                }))
             }
             "shutdown_host" => {
                 bail!("shutdown_host is handled by the resident host protocol")

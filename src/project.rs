@@ -10,12 +10,20 @@ struct ConfigFile {
     project_path: PathBuf,
     #[serde(alias = "gyx_tool_path")]
     tool_path: PathBuf,
+    #[serde(default)]
+    project_file: Option<PathBuf>,
+    #[serde(default)]
+    davinci_command_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionConfig {
     pub project_path: PathBuf,
     pub tool_path: PathBuf,
+    #[serde(default)]
+    pub project_file: Option<PathBuf>,
+    #[serde(default)]
+    pub davinci_command_path: Option<PathBuf>,
 }
 
 impl SessionConfig {
@@ -47,13 +55,26 @@ impl SessionConfig {
 
         let tool_path = canonical_directory(&parsed.tool_path)
             .context("tool_path is not an accessible directory")?;
+        let project_file = parsed
+            .project_file
+            .map(|path| canonical_project_file(&configured_project, &path))
+            .transpose()?;
+        let davinci_command_path = parsed
+            .davinci_command_path
+            .map(|path| canonical_davinci_command(&path))
+            .transpose()?;
         Ok(Self {
             project_path: configured_project,
             tool_path,
+            project_file,
+            davinci_command_path,
         })
     }
 
     pub fn dpa_file(&self) -> Result<PathBuf> {
+        if let Some(path) = &self.project_file {
+            return Ok(path.clone());
+        }
         let mut files = Vec::new();
         for entry in fs::read_dir(&self.project_path)
             .with_context(|| format!("cannot read {}", self.project_path.display()))?
@@ -104,6 +125,55 @@ impl SessionConfig {
         }
         Ok(canonical)
     }
+}
+
+fn canonical_project_file(project_path: &Path, path: &Path) -> Result<PathBuf> {
+    if !path.is_absolute() {
+        bail!("project_file must be absolute");
+    }
+    let canonical = normalize_canonical_path(
+        path.canonicalize()
+            .with_context(|| format!("project_file not found: {}", path.display()))?,
+    );
+    if !canonical.is_file() {
+        bail!("project_file is not a file: {}", canonical.display());
+    }
+    if !canonical.starts_with(project_path) {
+        bail!(
+            "project_file must be inside project_path: {}",
+            canonical.display()
+        );
+    }
+    if !canonical
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("dpa"))
+    {
+        bail!("project_file must have a .dpa extension");
+    }
+    Ok(canonical)
+}
+
+fn canonical_davinci_command(path: &Path) -> Result<PathBuf> {
+    if !path.is_absolute() {
+        bail!("davinci_command_path must be absolute");
+    }
+    let canonical = normalize_canonical_path(
+        path.canonicalize()
+            .with_context(|| format!("davinci_command_path not found: {}", path.display()))?,
+    );
+    if !canonical.is_file()
+        || !canonical
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("DVCfgCmd.exe"))
+    {
+        bail!(
+            "davinci_command_path must point to DVCfgCmd.exe: {}",
+            canonical.display()
+        );
+    }
+    Ok(canonical)
 }
 
 fn bridge_config_path(project_directory: &Path) -> PathBuf {

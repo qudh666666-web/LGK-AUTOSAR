@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 
 use crate::project::SessionConfig;
 use crate::vector::module_index::ModuleIndex;
+use crate::vector::template_index::read_module_definition_ref;
 
 pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     let module = request
@@ -19,9 +20,11 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
         bail!("module must be a short module name");
     }
     let found = index.find(module)?;
+    let definition_ref = read_module_definition_ref(&found.config_path, &found.module)?;
     Ok(json!({
         "module": found.module,
         "name": found.name,
         "configPath": found.config_path,
+        "definition_ref": definition_ref,
     }))
 }

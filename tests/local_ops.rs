@@ -223,3 +223,94 @@ fn session_paths_are_accepted_by_legacy_java_tools() {
         .to_string_lossy()
         .starts_with(r"\\?\"));
 }
+
+#[test]
+fn supports_non_microsar_definitions_and_explicit_tool_selection() {
+    let root = tempdir().expect("tempdir");
+    let project = root.path().join("GenericCfg");
+    let tool = root.path().join("VendorSip");
+    let config_file = project.join("Config/ECUC/Vendor_Nm_ecuc.arxml");
+    let project_file = project.join("GenericPlatform.dpa");
+    let command = tool.join("DaVinci/Exec/DVCfgCmd.exe");
+    fs::create_dir_all(config_file.parent().expect("config parent")).expect("project dirs");
+    fs::create_dir_all(command.parent().expect("command parent")).expect("command dirs");
+    fs::create_dir_all(tool.join("Definitions/Networking")).expect("definition dirs");
+    fs::write(&command, b"").expect("command placeholder");
+    fs::write(project.join("ArchivedProject.dpa"), "<ProjectAssistant/>").expect("other dpa");
+    fs::write(
+        &project_file,
+        r#"<?xml version="1.0"?>
+<ProjectAssistant>
+  <EcucSplitter>
+    <Splitter File=".\Config\ECUC\Vendor_Nm_ecuc.arxml">
+      <Module Name="Nm"/>
+    </Splitter>
+  </EcucSplitter>
+</ProjectAssistant>"#,
+    )
+    .expect("selected dpa");
+    fs::write(
+        &config_file,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<AUTOSAR>
+  <ECUC-MODULE-CONFIGURATION-VALUES>
+    <SHORT-NAME>NetworkManagerInstance</SHORT-NAME>
+    <DEFINITION-REF DEST="ECUC-MODULE-DEF">/AcmeAutosar/Nm</DEFINITION-REF>
+  </ECUC-MODULE-CONFIGURATION-VALUES>
+</AUTOSAR>"#,
+    )
+    .expect("module config");
+    fs::write(
+        tool.join("Definitions/Networking/Nm_definition.arxml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<AUTOSAR>
+  <AR-PACKAGES>
+    <AR-PACKAGE>
+      <SHORT-NAME>AcmeAutosar</SHORT-NAME>
+      <ELEMENTS>
+        <ECUC-MODULE-DEF>
+          <SHORT-NAME>Nm</SHORT-NAME>
+          <PARAMETERS>
+            <ECUC-FLOAT-PARAM-DEF>
+              <SHORT-NAME>NmMainFunctionPeriod</SHORT-NAME>
+              <DEFAULT-VALUE>0.01</DEFAULT-VALUE>
+            </ECUC-FLOAT-PARAM-DEF>
+          </PARAMETERS>
+        </ECUC-MODULE-DEF>
+      </ELEMENTS>
+    </AR-PACKAGE>
+  </AR-PACKAGES>
+</AUTOSAR>"#,
+    )
+    .expect("vendor definition");
+    fs::write(
+        project.join("ecuc-bridge.json"),
+        format!(
+            "{{\"project_path\":{},\"tool_path\":{},\"project_file\":{},\"davinci_command_path\":{}}}",
+            serde_json::to_string(&project).expect("project JSON"),
+            serde_json::to_string(&tool).expect("tool JSON"),
+            serde_json::to_string(&project_file).expect("dpa JSON"),
+            serde_json::to_string(&command).expect("command JSON")
+        ),
+    )
+    .expect("bridge config");
+
+    let config = SessionConfig::load(&project).expect("load generic session");
+    assert_eq!(config.dpa_file().expect("selected dpa"), project_file);
+    assert_eq!(
+        config.davinci_command_path.as_deref(),
+        Some(command.as_path())
+    );
+
+    let module = ops::find_module::execute(&config, &json!({"module": "Nm"})).expect("find module");
+    assert_eq!(module["definition_ref"], "/AcmeAutosar/Nm");
+    let definition = ops::get_param_definition::execute(
+        &config,
+        &json!({"module": "Nm", "params": "NmMainFunctionPeriod"}),
+    )
+    .expect("vendor parameter definition");
+    assert_eq!(
+        definition["definitions"][0]["definition_ref"],
+        "/AcmeAutosar/Nm/NmMainFunctionPeriod"
+    );
+}

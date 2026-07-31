@@ -51,9 +51,7 @@ pub fn run(port: u16, token_path: &Path) -> Result<()> {
             continue;
         }
         if let Some(active) = &active_config {
-            if active.project_path != request.cfg.project_path
-                || active.tool_path != request.cfg.tool_path
-            {
+            if active != &request.cfg {
                 write_response(
                     &mut stream,
                     HostResponse {

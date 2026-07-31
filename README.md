@@ -4,6 +4,8 @@ An open-source local command-line bridge for inspecting and updating AUTOSAR ECU
 
 The project provides local module discovery, ECUC template lookup, container lookup, scoped text edits, DaVinci validation/error listing, module generation, and normal daemon shutdown. It never bundles DaVinci, Vector SIP content, licenses, or ECUC project files.
 
+It is not tied to TC275 or to a particular AUTOSAR module-definition package. Module generation uses the exact `ECUC-MODULE-DEF` reference read from the selected project's ECUC configuration, such as `/MICROSAR/Com`, `/AUTOSAR/...`, or another vendor package supplied by the installed SIP.
+
 ## License and scope
 
 This repository is MIT-licensed. It is an independent community implementation and is not affiliated with Vector Informatik GmbH. DaVinci and Vector are trademarks of their respective owners. Use requires a lawful local DaVinci installation and compliance with its license terms.
@@ -31,6 +33,19 @@ Create `ecuc-bridge.json` in the DaVinci Cfg directory:
   "tool_path": "D:\\VectorSIP"
 }
 ```
+
+If the directory contains several `.dpa` files, or the DaVinci installation contains several command executables, select them explicitly:
+
+```json
+{
+  "project_path": "D:\\Work\\Project\\Cfg",
+  "tool_path": "D:\\VectorSIP",
+  "project_file": "D:\\Work\\Project\\Cfg\\VehiclePlatform.dpa",
+  "davinci_command_path": "D:\\Vector\\DaVinci\\Exec\\DVCfgCmd.exe"
+}
+```
+
+The optional `project_file` must be a `.dpa` file inside `project_path`. The optional `davinci_command_path` must point directly to `DVCfgCmd.exe`. Without these fields, the original automatic discovery behavior remains unchanged.
 
 For migration only, the reader also accepts the former `gyx-vector.json` field names. New public projects should use `ecuc-bridge.json`.
 

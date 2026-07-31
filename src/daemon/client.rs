@@ -23,7 +23,10 @@ pub struct DaVinciClient {
 
 impl DaVinciClient {
     pub fn start(config: &SessionConfig) -> Result<Self> {
-        let dvcfg = find_dvcfg(&config.tool_path)?;
+        let dvcfg = match &config.davinci_command_path {
+            Some(path) => path.clone(),
+            None => find_dvcfg(&config.tool_path)?,
+        };
         let dpa = config.dpa_file()?;
         let runtime_dir = std::env::temp_dir().join(format!(
             "autosar-ecuc-bridge-{}-{}",
@@ -117,9 +120,10 @@ impl DaVinciClient {
             .join("\n"))
     }
 
-    pub fn generate(&self, module: &str) -> Result<String> {
+    pub fn generate(&self, module: &str, definition_ref: Option<&str>) -> Result<String> {
+        let command = generation_command(module, definition_ref)?;
         Ok(self
-            .send(&format!("GEN|{module}"))?
+            .send(&command)?
             .into_iter()
             .filter(|line| line != "ECUC_END")
             .collect::<Vec<_>>()
@@ -161,6 +165,20 @@ impl DaVinciClient {
         }
         bail!("DaVinci daemon closed the connection without ECUC_END")
     }
+}
+
+fn generation_command(module: &str, definition_ref: Option<&str>) -> Result<String> {
+    if module.eq_ignore_ascii_case("all") {
+        return Ok("GEN|all".to_string());
+    }
+    let definition_ref = definition_ref
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("module definition ref is required for generation"))?;
+    if module.contains('|') || definition_ref.contains('|') {
+        bail!("module and definition ref must not contain '|'");
+    }
+    Ok(format!("GEN|{module}|{definition_ref}"))
 }
 
 fn find_dvcfg(tool_path: &Path) -> Result<PathBuf> {
@@ -254,3 +272,17 @@ fn hide_window(command: &mut Command) {
 
 #[cfg(not(windows))]
 fn hide_window(_command: &mut Command) {}
+
+#[cfg(test)]
+mod tests {
+    use super::generation_command;
+
+    #[test]
+    fn generation_uses_actual_vendor_definition_ref() {
+        assert_eq!(
+            generation_command("Nm", Some("/VendorStack/Nm")).expect("command"),
+            "GEN|Nm|/VendorStack/Nm"
+        );
+        assert_eq!(generation_command("all", None).expect("all"), "GEN|all");
+    }
+}

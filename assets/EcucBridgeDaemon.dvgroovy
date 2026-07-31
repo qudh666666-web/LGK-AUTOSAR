@@ -114,10 +114,13 @@ daVinci {
                 def after = matchingErrors(module)
                 send("OK: solved ${before.size() - after.size()} of ${before.size()} matching validation error(s)")
             }
-            def generateModule = { module, send ->
+            def generateModule = { module, definitionRef, send ->
                 generation {
                     if (module != null && !module.trim().isEmpty() && !module.equalsIgnoreCase("all")) {
-                        settings { selectGeneratorsByDefRef("/MICROSAR/${module.trim()}") }
+                        if (definitionRef == null || definitionRef.trim().isEmpty()) {
+                            throw new IllegalArgumentException("module definition ref is required")
+                        }
+                        settings { selectGeneratorsByDefRef(definitionRef.trim()) }
                     }
                     generate()
                 }
@@ -145,7 +148,7 @@ daVinci {
                         switch (command) {
                             case "LIST": emitList(module, send); break
                             case "SOLVE": solve(module, targets, send); break
-                            case "GEN": generateModule(module, send); break
+                            case "GEN": generateModule(module, targets, send); break
                             default: send("FAIL: unsupported command ${command}")
                         }
                     } catch (Throwable failure) {

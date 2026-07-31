@@ -103,7 +103,7 @@ impl TemplateIndex {
     }
 }
 
-fn read_module_definition_ref(config_path: &Path, module: &str) -> Result<String> {
+pub fn read_module_definition_ref(config_path: &Path, module: &str) -> Result<String> {
     let root = Element::parse(
         fs::File::open(config_path)
             .with_context(|| format!("cannot open module config: {}", config_path.display()))?,
@@ -116,17 +116,40 @@ fn read_module_definition_ref(config_path: &Path, module: &str) -> Result<String
     })?;
     let mut values = Vec::new();
     descendants(&root, "ECUC-MODULE-CONFIGURATION-VALUES", &mut values);
-    for value in values {
-        if child_text(value, "SHORT-NAME").is_some_and(|name| name.eq_ignore_ascii_case(module)) {
-            return child_text(value, "DEFINITION-REF").ok_or_else(|| {
-                anyhow::anyhow!(
-                    "DEFINITION-REF not found under ECUC-MODULE-CONFIGURATION-VALUES in {}",
-                    config_path.display()
-                )
-            });
-        }
+    let mut candidates = values
+        .into_iter()
+        .filter_map(|value| {
+            let name = child_text(value, "SHORT-NAME")?;
+            let definition_ref = child_text(value, "DEFINITION-REF")?;
+            Some((name, definition_ref))
+        })
+        .collect::<Vec<_>>();
+    if let Some((_, definition_ref)) = candidates
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(module))
+    {
+        return Ok(definition_ref.clone());
     }
-    bail!("module {module} not found in {}", config_path.display())
+    if let Some((_, definition_ref)) = candidates.iter().find(|(_, definition_ref)| {
+        definition_ref
+            .rsplit('/')
+            .find(|part| !part.is_empty())
+            .is_some_and(|name| name.eq_ignore_ascii_case(module))
+    }) {
+        return Ok(definition_ref.clone());
+    }
+    if candidates.len() == 1 {
+        return Ok(candidates.pop().expect("length checked").1);
+    }
+    bail!(
+        "cannot identify module {module} in {} from definition refs: {}",
+        config_path.display(),
+        candidates
+            .iter()
+            .map(|(_, definition_ref)| definition_ref.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 fn module_definition_paths(root: &Element) -> Vec<String> {
