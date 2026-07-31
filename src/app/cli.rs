@@ -20,14 +20,7 @@ pub fn ensure_host() -> Result<()> {
         return Ok(());
     }
     start_host(&token_path)?;
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline {
-        if host_is_listening() {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-    bail!("resident host did not become ready")
+    wait_for_host_listener()
 }
 
 pub fn run(project_directory: &Path, raw_request: &str) -> Result<String> {
@@ -43,20 +36,21 @@ pub fn run(project_directory: &Path, raw_request: &str) -> Result<String> {
             "message": first_error.to_string(),
         })
         .to_string()),
-        Err(_) => {
-            start_host(&token_path)?;
-            let deadline = Instant::now() + Duration::from_secs(15);
-            loop {
-                match send_request(&config, raw_request, &launch_key, false) {
-                    Ok(response) => return response_text(response),
-                    Err(error) if Instant::now() >= deadline => {
-                        return Err(error).context("resident host did not become ready")
-                    }
-                    Err(_) => thread::sleep(Duration::from_millis(100)),
-                }
-            }
-        }
+        Err(first_error) => bail!(
+            "resident host is not running; run --start-host before the request: {first_error}"
+        ),
     }
+}
+
+fn wait_for_host_listener() -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline {
+        if host_is_listening() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    bail!("resident host did not become ready")
 }
 
 fn host_is_listening() -> bool {
@@ -193,13 +187,9 @@ fn host_executable(directory: &Path) -> PathBuf {
 #[cfg(windows)]
 fn detach_resident_host(command: &mut Command) {
     use std::os::windows::process::CommandExt;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(
-        CREATE_BREAKAWAY_FROM_JOB | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
-    );
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
 }
 
 #[cfg(not(windows))]

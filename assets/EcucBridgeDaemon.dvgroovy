@@ -22,16 +22,29 @@ daVinci {
             def errorResult = { result ->
                 try { return result?.severity?.toString()?.equalsIgnoreCase("ERROR") } catch (Throwable ignored) { return false }
             }
+            def linkedPath = { element ->
+                try {
+                    def modelObject = element?.getAspect(IMdfObjectAspect.class)?.object
+                    if (modelObject == null) return null
+                    for (String propertyName : ["asrPath", "absoluteAsrPath", "path"]) {
+                        def property = modelObject.metaClass.hasProperty(modelObject, propertyName)
+                        if (property == null) continue
+                        def value = property.getProperty(modelObject)
+                        if (value != null) return text(value)
+                    }
+                } catch (Throwable ignored) {}
+                return null
+            }
             def inModule = { result, module ->
                 if (module == null || module.trim().equalsIgnoreCase("all")) return true
                 def marker = "/${module.trim()}/"
                 def elements = result?.erroneousCEs
                 if (elements == null) return false
-                return elements.any { element ->
-                    def location = null
-                    try { location = element.getAspect(IMdfObjectAspect.class)?.object?.asrPath } catch (Throwable ignored) {}
-                    location != null && text(location).contains(marker)
+                for (def element : elements) {
+                    def location = linkedPath(element)
+                    if (location != null && location.contains(marker)) return true
                 }
+                return false
             }
             def actionsFor = { result ->
                 def actions = []

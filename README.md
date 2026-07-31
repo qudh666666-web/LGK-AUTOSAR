@@ -37,8 +37,11 @@ For migration only, the reader also accepts the former `gyx-vector.json` field n
 Run the executable from that Cfg directory and pass one JSON request:
 
 ```powershell
+autosar-ecuc-bridge.exe --start-host
 autosar-ecuc-bridge.exe '{"func":"find_module","module":"Com"}'
 ```
+
+The supplied PowerShell wrapper performs the host-start step automatically. Prefer it for automation and AI-tool integration.
 
 Supported functions are `find_module`, `find_module_template`, `get_param_definition`, `locate_container`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`, and `shutdown_host`. For existing automation, `find_bsw_module`, `get_bsw_module_template`, and `get_bsw_param_definition` remain accepted aliases.
 
