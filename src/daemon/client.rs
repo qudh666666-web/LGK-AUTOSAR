@@ -1,0 +1,256 @@
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
+
+use anyhow::{bail, Context, Result};
+use serde_json::Value;
+use walkdir::WalkDir;
+
+use crate::project::SessionConfig;
+
+const DAEMON_SCRIPT: &str = include_str!("../../assets/EcucBridgeDaemon.dvgroovy");
+
+pub struct DaVinciClient {
+    child: Child,
+    port: u16,
+    runtime_dir: PathBuf,
+}
+
+impl DaVinciClient {
+    pub fn start(config: &SessionConfig) -> Result<Self> {
+        let dvcfg = find_dvcfg(&config.tool_path)?;
+        let dpa = config.dpa_file()?;
+        let runtime_dir = std::env::temp_dir().join(format!(
+            "autosar-ecuc-bridge-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        fs::create_dir(&runtime_dir)
+            .with_context(|| format!("create runtime dir: {}", runtime_dir.display()))?;
+        let script_path = runtime_dir.join("EcucBridgeDaemon.dvgroovy");
+        fs::write(&script_path, DAEMON_SCRIPT)
+            .with_context(|| format!("write script: {}", script_path.display()))?;
+        let stdout_log = runtime_dir.join("DVCfgCmd.stdout.log");
+        let stderr_log = runtime_dir.join("DVCfgCmd.stderr.log");
+
+        let mut command = Command::new(&dvcfg);
+        command
+            .current_dir(&config.project_path)
+            .arg("--project")
+            .arg(&dpa)
+            .arg("--scriptLocations")
+            .arg(&runtime_dir)
+            .arg("--scriptTask")
+            .arg("EcucBridgeDaemon")
+            .arg("--ignoreUserScriptLocations")
+            .arg("--verbose")
+            .arg("ERROR")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        hide_window(&mut command);
+        let mut child = command
+            .spawn()
+            .with_context(|| format!("start {}", dvcfg.display()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("DVCfgCmd stdout pipe unavailable"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("DVCfgCmd stderr pipe unavailable"))?;
+        let (port_sender, port_receiver) = mpsc::sync_channel(1);
+        spawn_stdout_reader(stdout, stdout_log, port_sender);
+        spawn_log_reader(stderr, stderr_log);
+
+        let port = match port_receiver.recv_timeout(Duration::from_secs(300)) {
+            Ok(port) => port,
+            Err(error) => {
+                if let Some(status) = child.try_wait()? {
+                    bail!("start daemon failed with {status}");
+                }
+                bail!("start daemon timeout: {error}");
+            }
+        };
+        Ok(Self {
+            child,
+            port,
+            runtime_dir,
+        })
+    }
+
+    pub fn list_errors(&self, module: &str) -> Result<Value> {
+        let lines = self.send(&format!("LIST|{module}"))?;
+        let start = lines
+            .iter()
+            .position(|line| line == "ECUC_JSON_BEGIN")
+            .ok_or_else(|| anyhow::anyhow!("no JSON_BEGIN in response"))?;
+        let end = lines
+            .iter()
+            .position(|line| line == "ECUC_JSON_END")
+            .ok_or_else(|| anyhow::anyhow!("no JSON_END in response"))?;
+        if end <= start {
+            bail!("invalid JSON markers in daemon response");
+        }
+        let raw = lines[start + 1..end].join("\n");
+        serde_json::from_str(&raw).context("parse error list")
+    }
+
+    pub fn solve_errors(&self, module: &str, targets: Option<&str>) -> Result<String> {
+        let command = match targets {
+            Some(targets) if !targets.trim().is_empty() => {
+                format!("SOLVE|{module}|{}", targets.trim())
+            }
+            _ => format!("SOLVE|{module}"),
+        };
+        Ok(self
+            .send(&command)?
+            .into_iter()
+            .filter(|line| line != "ECUC_END")
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
+
+    pub fn generate(&self, module: &str) -> Result<String> {
+        Ok(self
+            .send(&format!("GEN|{module}"))?
+            .into_iter()
+            .filter(|line| line != "ECUC_END")
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
+
+    pub fn shutdown(mut self) -> Result<()> {
+        let _ = self.send("SHUTDOWN")?;
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while Instant::now() < deadline {
+            if self.child.try_wait()?.is_some() {
+                cleanup_runtime_dir(&self.runtime_dir);
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        bail!(
+            "DaVinci daemon did not exit after SHUTDOWN; runtime preserved at {}",
+            self.runtime_dir.display()
+        )
+    }
+
+    fn send(&self, command: &str) -> Result<Vec<String>> {
+        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.port);
+        let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(10))
+            .with_context(|| format!("connect to DaVinci daemon at {address}"))?;
+        stream.set_read_timeout(Some(Duration::from_secs(3600)))?;
+        writeln!(stream, "{command}")?;
+        stream.flush()?;
+
+        let mut lines = Vec::new();
+        for line in BufReader::new(stream).lines() {
+            let line = line?;
+            let done = line == "ECUC_END";
+            lines.push(line);
+            if done {
+                return Ok(lines);
+            }
+        }
+        bail!("DaVinci daemon closed the connection without ECUC_END")
+    }
+}
+
+fn find_dvcfg(tool_path: &Path) -> Result<PathBuf> {
+    let mut candidates = WalkDir::new(tool_path)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("DVCfgCmd.exe")
+        })
+        .map(|entry| entry.into_path())
+        .collect::<Vec<_>>();
+    candidates.sort();
+    match candidates.as_slice() {
+        [] => bail!(
+            "DVCfgCmd.exe not found under tool_path: {}",
+            tool_path.display()
+        ),
+        [path] => Ok(path.clone()),
+        _ => bail!(
+            "found multiple DVCfgCmd.exe under tool_path: {}",
+            candidates
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn spawn_stdout_reader(
+    stdout: impl std::io::Read + Send + 'static,
+    log_path: PathBuf,
+    port_sender: mpsc::SyncSender<u16>,
+) {
+    thread::spawn(move || {
+        let mut log = create_log(&log_path);
+        let mut sent = false;
+        for line in BufReader::new(stdout).lines().map_while(|line| line.ok()) {
+            if let Some(log) = log.as_mut() {
+                let _ = writeln!(log, "{line}");
+            }
+            if !sent {
+                if let Some(raw_port) = line.trim().strip_prefix("ECUC_BRIDGE_READY:") {
+                    if let Ok(port) = raw_port.parse::<u16>() {
+                        let _ = port_sender.send(port);
+                        sent = true;
+                    }
+                }
+            }
+        }
+    });
+}
+
+fn spawn_log_reader(reader: impl std::io::Read + Send + 'static, log_path: PathBuf) {
+    thread::spawn(move || {
+        let mut log = create_log(&log_path);
+        for line in BufReader::new(reader).lines().map_while(|line| line.ok()) {
+            if let Some(log) = log.as_mut() {
+                let _ = writeln!(log, "{line}");
+            }
+        }
+    });
+}
+
+fn create_log(path: &Path) -> Option<File> {
+    OpenOptions::new().create(true).append(true).open(path).ok()
+}
+
+fn cleanup_runtime_dir(path: &Path) {
+    let temp = std::env::temp_dir();
+    if path.starts_with(&temp)
+        && path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.starts_with("autosar-ecuc-bridge-"))
+    {
+        fs::remove_dir_all(path).ok();
+    }
+}
+
+#[cfg(windows)]
+fn hide_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(0x0800_0000);
+}
+
+#[cfg(not(windows))]
+fn hide_window(_command: &mut Command) {}

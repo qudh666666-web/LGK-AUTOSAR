@@ -1,0 +1,179 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Deserialize)]
+struct ConfigFile {
+    #[serde(alias = "gyx_project_path")]
+    project_path: PathBuf,
+    #[serde(alias = "gyx_tool_path")]
+    tool_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SessionConfig {
+    pub project_path: PathBuf,
+    pub tool_path: PathBuf,
+}
+
+impl SessionConfig {
+    pub fn load(project_directory: &Path) -> Result<Self> {
+        let project_directory = canonical_directory(project_directory)
+            .context("project path is not an accessible directory")?;
+        let config_path = bridge_config_path(&project_directory);
+        let raw = fs::read_to_string(&config_path)
+            .with_context(|| format!("missing or unreadable {}", config_path.display()))?;
+        let parsed: ConfigFile = serde_json::from_str(&raw)
+            .with_context(|| format!("invalid JSON in {}", config_path.display()))?;
+
+        if !parsed.project_path.is_absolute() {
+            bail!("project_path must be absolute");
+        }
+        if !parsed.tool_path.is_absolute() {
+            bail!("tool_path must be absolute");
+        }
+
+        let configured_project = canonical_directory(&parsed.project_path)
+            .context("project_path is not an accessible directory")?;
+        if configured_project != project_directory {
+            bail!(
+                "project_path must equal the directory containing the bridge configuration: configured={}, actual={}",
+                configured_project.display(),
+                project_directory.display()
+            );
+        }
+
+        let tool_path = canonical_directory(&parsed.tool_path)
+            .context("tool_path is not an accessible directory")?;
+        Ok(Self {
+            project_path: configured_project,
+            tool_path,
+        })
+    }
+
+    pub fn dpa_file(&self) -> Result<PathBuf> {
+        let mut files = Vec::new();
+        for entry in fs::read_dir(&self.project_path)
+            .with_context(|| format!("cannot read {}", self.project_path.display()))?
+        {
+            let path = entry?.path();
+            if path
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case("dpa"))
+            {
+                files.push(path);
+            }
+        }
+        files.sort();
+        match files.as_slice() {
+            [] => bail!(
+                "no .dpa file found in project_path: {}",
+                self.project_path.display()
+            ),
+            [file] => Ok(file.clone()),
+            _ => bail!(
+                "multiple .dpa files found in project_path: {}",
+                files
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
+
+    pub fn ensure_project_file(&self, path: &Path) -> Result<PathBuf> {
+        if !path.is_absolute() {
+            bail!("path must be absolute");
+        }
+        let canonical = path
+            .canonicalize()
+            .with_context(|| format!("file not found: {}", path.display()))?;
+        let canonical = normalize_canonical_path(canonical);
+        if !canonical.starts_with(&self.project_path) {
+            bail!(
+                "refusing to edit a file outside project_path: {}",
+                canonical.display()
+            );
+        }
+        if !canonical.is_file() {
+            bail!("path is not a file: {}", canonical.display());
+        }
+        Ok(canonical)
+    }
+}
+
+fn bridge_config_path(project_directory: &Path) -> PathBuf {
+    let public_config = project_directory.join("ecuc-bridge.json");
+    if public_config.is_file() {
+        public_config
+    } else {
+        project_directory.join("gyx-vector.json")
+    }
+}
+
+fn canonical_directory(path: &Path) -> Result<PathBuf> {
+    let canonical = path
+        .canonicalize()
+        .with_context(|| format!("path not found: {}", path.display()))?;
+    let canonical = normalize_canonical_path(canonical);
+    if !canonical.is_dir() {
+        bail!("path is not a directory: {}", canonical.display());
+    }
+    Ok(canonical)
+}
+
+#[cfg(windows)]
+fn normalize_canonical_path(path: PathBuf) -> PathBuf {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+    const EXTENDED_PREFIX: &[u16] = &[b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
+    const EXTENDED_UNC_PREFIX: &[u16] = &[
+        b'\\' as u16,
+        b'\\' as u16,
+        b'?' as u16,
+        b'\\' as u16,
+        b'U' as u16,
+        b'N' as u16,
+        b'C' as u16,
+        b'\\' as u16,
+    ];
+
+    let wide = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    if starts_with_ascii_case_insensitive(&wide, EXTENDED_UNC_PREFIX) {
+        let mut ordinary_unc = vec![b'\\' as u16, b'\\' as u16];
+        ordinary_unc.extend_from_slice(&wide[EXTENDED_UNC_PREFIX.len()..]);
+        return PathBuf::from(OsString::from_wide(&ordinary_unc));
+    }
+    if wide.starts_with(EXTENDED_PREFIX) {
+        return PathBuf::from(OsString::from_wide(&wide[EXTENDED_PREFIX.len()..]));
+    }
+    path
+}
+
+#[cfg(windows)]
+fn starts_with_ascii_case_insensitive(value: &[u16], prefix: &[u16]) -> bool {
+    value.len() >= prefix.len()
+        && value
+            .iter()
+            .zip(prefix)
+            .all(|(left, right)| ascii_upper(*left) == ascii_upper(*right))
+}
+
+#[cfg(windows)]
+fn ascii_upper(value: u16) -> u16 {
+    if (b'a' as u16..=b'z' as u16).contains(&value) {
+        value - (b'a' - b'A') as u16
+    } else {
+        value
+    }
+}
+
+#[cfg(not(windows))]
+fn normalize_canonical_path(path: PathBuf) -> PathBuf {
+    path
+}

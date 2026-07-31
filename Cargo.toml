@@ -1,0 +1,36 @@
+[package]
+name = "autosar-ecuc-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "Open-source local bridge for licensed Vector DaVinci ECUC projects"
+license = "MIT"
+keywords = ["autosar", "ecuc", "davinci", "vector"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "autosar_ecuc_bridge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "autosar-ecuc-bridge"
+path = "src/bin/autosar-ecuc-bridge.rs"
+
+[[bin]]
+name = "autosar-ecuc-bridge-host"
+path = "src/bin/autosar-ecuc-bridge-host.rs"
+
+[dependencies]
+anyhow = "1.0"
+rand = "0.9"
+regex = "1.13"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+walkdir = "2.5"
+xmltree = "0.11"
+
+[dev-dependencies]
+tempfile = "3.20"
+
+[profile.release]
+strip = false
+panic = "abort"
