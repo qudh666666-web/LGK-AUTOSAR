@@ -9,6 +9,7 @@ fn main() {
 }
 
 fn run() -> anyhow::Result<()> {
+    // 这个 EXE 是一次性 CLI：支持内联 JSON、stdin 和请求文件三种输入。
     let mut args = std::env::args_os();
     let executable = args.next().unwrap_or_else(|| "autosar-ecuc-bridge".into());
     let Some(raw) = args.next() else {
@@ -21,6 +22,7 @@ fn run() -> anyhow::Result<()> {
         .into_string()
         .map_err(|_| anyhow::anyhow!("request argument is not valid Unicode"))?;
     if raw == "--start-host" {
+        // 只准备后台服务，不执行具体 ECUC 请求。
         if args.next().is_some() {
             anyhow::bail!("--start-host does not accept another argument");
         }
@@ -53,6 +55,7 @@ fn run() -> anyhow::Result<()> {
             raw
         }
     };
+    // 当前工作目录就是 Cfg；SessionConfig 会从这里读取 ecuc-bridge.json。
     let project = std::env::current_dir()?;
     let output = autosar_ecuc_bridge::app::cli::run(&project, &raw)?;
     println!("{output}");

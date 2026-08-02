@@ -7,6 +7,7 @@ use crate::project::SessionConfig;
 use crate::vector::module_index::ModuleIndex;
 use crate::vector::template_index::read_module_definition_ref;
 
+// JSON 请求的总调度器。davinci 为 None 时代表尚未启动 DaVinci。
 pub struct CommandDispatcher {
     davinci: Option<DaVinciClient>,
 }
@@ -17,6 +18,7 @@ impl CommandDispatcher {
     }
 
     pub fn dispatch_batch(&mut self, config: &SessionConfig, raw: &str) -> Result<Value> {
+        // 允许批量只读查询；每个元素仍复用同一个工程上下文。
         let parsed: Value =
             serde_json::from_str(raw).map_err(|error| anyhow::anyhow!("invalid JSON: {error}"))?;
         match &parsed {
@@ -36,6 +38,7 @@ impl CommandDispatcher {
     }
 
     pub fn shutdown(mut self) -> Result<()> {
+        // 只有真的启动过 DaVinci 才需要向它发送正常关闭命令。
         if let Some(client) = self.davinci.take() {
             let _ = client.shutdown();
         }
@@ -48,6 +51,7 @@ impl CommandDispatcher {
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("func is required"))?;
         match func {
+            // 这些操作只解析本地 DPA/ECUC/BSWMD 文件，不启动 DaVinci。
             "find_module" | "find_bsw_module" => ops::find_module::execute(config, request),
             "find_module_template" | "get_bsw_module_template" => {
                 ops::find_module_template::execute(config, request)
@@ -58,6 +62,7 @@ impl CommandDispatcher {
             "locate_container" => ops::locate_container::execute(config, request),
             "edit_file" => ops::edit_file::execute(config, request),
             "get_errors_list" => {
+                // 错误列表来自 DaVinci 的校验模型，不能靠静态 XML 解析替代。
                 let module = optional_module(request);
                 self.davinci(config)?.list_errors(module)
             }
@@ -74,6 +79,8 @@ impl CommandDispatcher {
             }
             "generate_code" => {
                 let module = optional_module(request);
+                // 单模块生成的关键：从当前工程读取真实定义路径，
+                // 而不是把 /MICROSAR/<module> 或某个芯片/SIP 写死。
                 let definition_ref = if module.eq_ignore_ascii_case("all") {
                     None
                 } else {
@@ -101,6 +108,7 @@ impl CommandDispatcher {
     }
 
     fn davinci(&mut self, config: &SessionConfig) -> Result<&DaVinciClient> {
+        // 惰性启动：普通查询不会付出 DaVinci 冷启动的时间。
         if self.davinci.is_none() {
             self.davinci = Some(DaVinciClient::start(config)?);
         }

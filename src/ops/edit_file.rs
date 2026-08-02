@@ -8,6 +8,7 @@ use serde_json::{json, Map, Value};
 
 use crate::project::SessionConfig;
 
+// 一个基于行号的最小编辑：既支持单行，也支持 "起始行-结束行"。
 #[derive(Debug)]
 struct Edit {
     start: usize,
@@ -16,6 +17,8 @@ struct Edit {
 }
 
 pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
+    // 这里不重排或重新序列化 ARXML，只替换已经确认的行范围，
+    // 以尽量保留 DaVinci 原有的格式、注释和无关内容。
     let path = request
         .get("path")
         .and_then(Value::as_str)
@@ -30,6 +33,7 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
         bail!("edits must not be empty");
     }
 
+    // 保留 UTF-8 BOM、原始换行符和文件末尾换行，避免纯格式差异污染 Compare。
     let original = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
     let (has_bom, text_bytes) = original
         .strip_prefix(&[0xEF, 0xBB, 0xBF])
@@ -46,6 +50,7 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
         .map(str::to_string)
         .collect::<Vec<_>>();
 
+    // 先校验所有范围，再从后往前替换，防止前面的插入改变后续行号。
     let mut parsed = parse_edits(edits, lines.len())?;
     reject_overlaps(&parsed)?;
     parsed.sort_by_key(|edit| Reverse(edit.start));
@@ -69,6 +74,7 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     }
     encoded.extend_from_slice(output.as_bytes());
 
+    // 先完整写入临时文件并 sync，再复制覆盖原文件，降低中途写坏的风险。
     let temp_path = path.with_extension(format!(
         "{}.autosar-ecuc-bridge.tmp",
         path.extension()
@@ -134,6 +140,7 @@ fn parse_range(key: &str) -> Result<(usize, usize)> {
 }
 
 fn reject_overlaps(edits: &[Edit]) -> Result<()> {
+    // 重叠范围的替换顺序没有唯一答案，直接拒绝而不是猜测用户意图。
     let mut ranges = edits
         .iter()
         .map(|edit| (edit.start, edit.end))

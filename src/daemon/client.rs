@@ -13,8 +13,10 @@ use walkdir::WalkDir;
 
 use crate::project::SessionConfig;
 
+// 编译时把 Groovy 代理嵌入 EXE；运行时再写入临时目录交给 DVCfgCmd。
 const DAEMON_SCRIPT: &str = include_str!("../../assets/EcucBridgeDaemon.dvgroovy");
 
+// 一个已启动的 DVCfgCmd/DaVinci 子进程及其本机通信信息。
 pub struct DaVinciClient {
     child: Child,
     port: u16,
@@ -23,11 +25,13 @@ pub struct DaVinciClient {
 
 impl DaVinciClient {
     pub fn start(config: &SessionConfig) -> Result<Self> {
+        // 用户可显式选择命令程序；否则保持旧行为，从 tool_path 自动发现。
         let dvcfg = match &config.davinci_command_path {
             Some(path) => path.clone(),
             None => find_dvcfg(&config.tool_path)?,
         };
         let dpa = config.dpa_file()?;
+        // 每个 DaVinci 会话使用独立临时目录，避免并发会话共用 Groovy 或日志。
         let runtime_dir = std::env::temp_dir().join(format!(
             "autosar-ecuc-bridge-{}-{}",
             std::process::id(),
@@ -41,6 +45,7 @@ impl DaVinciClient {
         let stdout_log = runtime_dir.join("DVCfgCmd.stdout.log");
         let stderr_log = runtime_dir.join("DVCfgCmd.stderr.log");
 
+        // DVCfgCmd 负责打开真实 DPA；脚本目录只包含本工具临时写出的代理。
         let mut command = Command::new(&dvcfg);
         command
             .current_dir(&config.project_path)
@@ -68,6 +73,7 @@ impl DaVinciClient {
             .stderr
             .take()
             .ok_or_else(|| anyhow::anyhow!("DVCfgCmd stderr pipe unavailable"))?;
+        // Groovy 完成加载后会在 stdout 打印随机端口；在收到它之前不能发送命令。
         let (port_sender, port_receiver) = mpsc::sync_channel(1);
         spawn_stdout_reader(stdout, stdout_log, port_sender);
         spawn_log_reader(stderr, stderr_log);
@@ -121,6 +127,7 @@ impl DaVinciClient {
     }
 
     pub fn generate(&self, module: &str, definition_ref: Option<&str>) -> Result<String> {
+        // 生成协议把真实 definition_ref 一并传给 Groovy。
         let command = generation_command(module, definition_ref)?;
         Ok(self
             .send(&command)?
@@ -131,6 +138,7 @@ impl DaVinciClient {
     }
 
     pub fn shutdown(mut self) -> Result<()> {
+        // 正常关闭优先：让 DaVinci 自己保存/释放会话，而不是强制结束子进程。
         let _ = self.send("SHUTDOWN")?;
         let deadline = Instant::now() + Duration::from_secs(60);
         while Instant::now() < deadline {
@@ -147,6 +155,7 @@ impl DaVinciClient {
     }
 
     fn send(&self, command: &str) -> Result<Vec<String>> {
+        // 第二个端口同样只使用 127.0.0.1；它是 Rust 与 DaVinci 内 Groovy 的私有通道。
         let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.port);
         let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(10))
             .with_context(|| format!("connect to DaVinci daemon at {address}"))?;
@@ -168,6 +177,7 @@ impl DaVinciClient {
 }
 
 fn generation_command(module: &str, definition_ref: Option<&str>) -> Result<String> {
+    // all 不需要筛选生成器；单模块必须带真实模块定义路径。
     if module.eq_ignore_ascii_case("all") {
         return Ok("GEN|all".to_string());
     }

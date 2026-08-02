@@ -9,6 +9,8 @@ use crate::app::{HostRequest, HostResponse};
 use crate::daemon::commands::CommandDispatcher;
 use crate::project::SessionConfig;
 
+// Resident Host 只服务本机的一个 DaVinci 工程会话。
+// 这样连续请求可复用 DaVinci，避免每次查询或生成都冷启动。
 pub fn run(port: u16, token_path: &Path) -> Result<()> {
     let token = fs::read_to_string(token_path)
         .with_context(|| format!("read token file: {}", token_path.display()))?;
@@ -16,9 +18,12 @@ pub fn run(port: u16, token_path: &Path) -> Result<()> {
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
     let listener =
         TcpListener::bind(address).with_context(|| format!("bind resident server: {address}"))?;
+    // 第一个有效请求绑定工程；会话期间拒绝切换工程，防止串项目。
     let mut active_config: Option<SessionConfig> = None;
+    // Dispatcher 持有惰性创建的 DaVinciClient。
     let mut dispatcher = Some(CommandDispatcher::new());
 
+    // 每条 TCP 连接只承载一个 JSON 请求和一个 JSON 响应。
     for incoming in listener.incoming() {
         let mut stream = match incoming {
             Ok(stream) => stream,
@@ -39,6 +44,7 @@ pub fn run(port: u16, token_path: &Path) -> Result<()> {
                 continue;
             }
         };
+        // 端口只绑定 127.0.0.1，Token 再限制为包装器创建的本地会话。
         if request.launch_key != token {
             write_response(
                 &mut stream,
@@ -70,6 +76,7 @@ pub fn run(port: u16, token_path: &Path) -> Result<()> {
             active_config = Some(request.cfg.clone());
         }
 
+        // shutdown 会先让 Dispatcher 正常退出 DaVinci，再结束 Host 主循环。
         if request.shutdown {
             let result = dispatcher.take().expect("dispatcher available").shutdown();
             let response = match result {
@@ -88,6 +95,8 @@ pub fn run(port: u16, token_path: &Path) -> Result<()> {
             break;
         }
 
+        // 普通请求交给命令分发器：本地查询不会启动 DaVinci，
+        // 只有生成/校验类请求才会按需创建 DaVinciClient。
         let response = match dispatcher
             .as_mut()
             .expect("dispatcher available")

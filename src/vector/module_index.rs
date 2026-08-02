@@ -7,6 +7,7 @@ use xmltree::{Element, XMLNode};
 
 use crate::project::SessionConfig;
 
+// DPA 中一个 Module 条目与它实际 ECUC 文件之间的映射。
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ModuleInfo {
     pub module: String,
@@ -21,6 +22,7 @@ pub struct ModuleIndex {
 
 impl ModuleIndex {
     pub fn load(config: &SessionConfig) -> Result<Self> {
+        // DPA 只负责回答“模块配置文件在哪”；它不是 BSWMD 参数模板。
         let dpa_path = config.dpa_file()?;
         let root = Element::parse(
             File::open(&dpa_path)
@@ -31,6 +33,7 @@ impl ModuleIndex {
             .ok_or_else(|| anyhow::anyhow!("EcucSplitter not found in {}", dpa_path.display()))?;
 
         let mut modules = Vec::new();
+        // 一个 Splitter 可能包含多个 Module，它们共享同一份 ECUC ARXML 文件。
         for node in &splitter.children {
             let XMLNode::Element(splitter_entry) = node else {
                 continue;
@@ -68,6 +71,7 @@ impl ModuleIndex {
     }
 
     pub fn find(&self, module: &str) -> Result<&ModuleInfo> {
+        // 对外部请求使用大小写无关匹配，避免 Com/com 造成无意义失败。
         self.modules
             .iter()
             .find(|item| item.module.eq_ignore_ascii_case(module))

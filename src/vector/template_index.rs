@@ -10,6 +10,7 @@ use crate::project::SessionConfig;
 use crate::vector::module_index::ModuleIndex;
 use crate::vector::search::{child_text, descendants};
 
+// 当前模块在 SIP 中的模板文件及其已解析 XML 树。
 #[derive(Debug)]
 pub struct TemplateIndex {
     pub module: String,
@@ -20,6 +21,8 @@ pub struct TemplateIndex {
 
 impl TemplateIndex {
     pub fn load(config: &SessionConfig, module: &str) -> Result<Self> {
+        // 先从实际 ECUC 读取定义路径，例如 /MICROSAR/Com 或 /Vendor/Nm。
+        // 这条路径才是跨芯片、跨资源包的稳定关联键。
         let modules = ModuleIndex::load(config)?;
         let module_info = modules.find(module)?;
         let definition_ref = read_module_definition_ref(&module_info.config_path, module)?;
@@ -28,6 +31,8 @@ impl TemplateIndex {
             .find(|part| !part.is_empty())
             .ok_or_else(|| anyhow::anyhow!("invalid module definition ref: {definition_ref}"))?;
 
+        // SIP 的布局因版本和供应商而异，因此扫描 tool_path，
+        // 再用完整 definition_ref 精确确认，而不是依赖固定目录名。
         let mut candidates = Vec::new();
         for entry in WalkDir::new(&config.tool_path)
             .follow_links(false)
@@ -85,6 +90,7 @@ impl TemplateIndex {
     }
 
     pub fn module_definition(&self) -> Result<&Element> {
+        // 后续参数索引只从匹配到的 ECUC-MODULE-DEF 根节点向下遍历。
         let mut module_defs = Vec::new();
         descendants(&self.root, "ECUC-MODULE-DEF", &mut module_defs);
         module_defs
@@ -104,6 +110,8 @@ impl TemplateIndex {
 }
 
 pub fn read_module_definition_ref(config_path: &Path, module: &str) -> Result<String> {
+    // 同一配置文件中通常按模块短名匹配；若实例名不同，
+    // 再按 DEFINITION-REF 的末段或唯一候选项回退匹配。
     let root = Element::parse(
         fs::File::open(config_path)
             .with_context(|| format!("cannot open module config: {}", config_path.display()))?,
@@ -153,6 +161,7 @@ pub fn read_module_definition_ref(config_path: &Path, module: &str) -> Result<St
 }
 
 fn module_definition_paths(root: &Element) -> Vec<String> {
+    // 把 AR-PACKAGE 层级还原为 /Package/.../Module 形式的引用路径。
     let mut output = Vec::new();
     collect_definition_paths(root, &mut Vec::new(), &mut output);
     output

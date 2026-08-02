@@ -13,6 +13,7 @@ use serde_json::Value;
 use crate::app::{token_file, HostRequest, HostResponse, DEFAULT_HOST_PORT};
 use crate::project::SessionConfig;
 
+// --start-host 使用的入口：创建 Token，必要时启动后台 Host，并等待监听就绪。
 pub fn ensure_host() -> Result<()> {
     let token_path = token_file();
     let _ = load_or_create_token(&token_path)?;
@@ -24,6 +25,7 @@ pub fn ensure_host() -> Result<()> {
 }
 
 pub fn run(project_directory: &Path, raw_request: &str) -> Result<String> {
+    // CLI 不处理 ECUC 逻辑；它把已校验的工程配置、请求和 Token 一起转发给 Host。
     let config = SessionConfig::load(project_directory)?;
     let shutdown = is_shutdown_request(raw_request)?;
     let token_path = token_file();
@@ -43,6 +45,7 @@ pub fn run(project_directory: &Path, raw_request: &str) -> Result<String> {
 }
 
 fn wait_for_host_listener() -> Result<()> {
+    // 后台进程创建和端口监听是两个时刻，因此轮询直到 Host 真正可连接。
     let deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < deadline {
         if host_is_listening() {
@@ -59,6 +62,7 @@ fn host_is_listening() -> bool {
 }
 
 fn is_shutdown_request(raw: &str) -> Result<bool> {
+    // shutdown 必须独立发送，避免同一个批次中一半请求已执行、一半被提前关闭。
     let value: Value = serde_json::from_str(raw).context("request is not valid JSON")?;
     match value {
         Value::Object(map) => Ok(map
@@ -85,6 +89,7 @@ fn send_request(
     launch_key: &str,
     shutdown: bool,
 ) -> Result<HostResponse> {
+    // HostRequest 是本机 TCP 上传递的外层信封；raw_text 才是用户原始 JSON 请求。
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_HOST_PORT);
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(1))
         .with_context(|| format!("resident host is not running at {address}"))?;
@@ -115,6 +120,7 @@ fn response_text(response: HostResponse) -> Result<String> {
 }
 
 fn load_or_create_token(path: &Path) -> Result<String> {
+    // Token 保存在 EXE 旁边，CLI 与 Host 通过同一值确认彼此属于同一个本地安装。
     if let Ok(value) = fs::read_to_string(path) {
         let value = value.trim();
         if value.len() >= 32 {
@@ -146,6 +152,7 @@ fn load_or_create_token(path: &Path) -> Result<String> {
 }
 
 fn start_host(token_path: &Path) -> Result<()> {
+    // Host EXE 与 CLI EXE 必须同目录发布，避免调用到另一个版本的后台程序。
     let current = std::env::current_exe()?;
     let directory = current
         .parent()

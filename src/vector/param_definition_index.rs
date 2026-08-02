@@ -8,6 +8,7 @@ use xmltree::{Element, XMLNode};
 use crate::vector::search::{child, child_text, first_descendant_text, is_definition};
 use crate::vector::template_index::TemplateIndex;
 
+// 暴露给 JSON 调用方的一个 ECUC 定义：容器、参数或引用。
 #[derive(Debug, Clone, Serialize)]
 pub struct DefinitionInfo {
     pub name: String,
@@ -27,6 +28,7 @@ pub struct ParamDefinitionIndex {
 
 impl ParamDefinitionIndex {
     pub fn load(template: &TemplateIndex) -> Result<Self> {
+        // 从已经精确匹配的模块模板根开始递归，构建所有完整 definition_ref。
         let module = template.module_definition()?;
         let mut definitions = Vec::new();
         collect_definitions(module, &template.definition_ref, &mut definitions, true);
@@ -39,6 +41,7 @@ impl ParamDefinitionIndex {
     }
 
     pub fn find_many<'a>(&'a self, names: &[&str]) -> Vec<&'a DefinitionInfo> {
+        // 调用方既可传短名，也可传完整 definition_ref。
         self.definitions
             .iter()
             .filter(|item| {
@@ -57,6 +60,7 @@ fn collect_definitions(
     output: &mut Vec<DefinitionInfo>,
     module_root: bool,
 ) {
+    // definition_ref 由父节点路径逐层拼出，和 ARXML 的嵌套结构保持一致。
     let recognized = !module_root && is_definition(element);
     let mut current_ref = parent_ref.to_string();
 
@@ -102,6 +106,7 @@ fn definition_group(element: &Element) -> String {
 }
 
 fn value_tag(dest: &str) -> &'static str {
+    // 返回编辑 ECUC 时应创建/查找的值节点类型，而不是 C 语言类型。
     if dest == "ECUC-PARAM-CONF-CONTAINER-DEF" {
         "ECUC-CONTAINER-VALUE"
     } else if dest.ends_with("-REFERENCE-DEF") {

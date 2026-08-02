@@ -8,6 +8,7 @@ fn main() {
 }
 
 fn run() -> anyhow::Result<()> {
+    // 这个 EXE 只启动 TCP Host；正常情况下由 PowerShell 包装器或 CLI 拉起。
     let mut port = None;
     let mut token_file = None;
     let mut args = std::env::args_os().skip(1);
@@ -30,5 +31,6 @@ fn run() -> anyhow::Result<()> {
     }
     let port = port.unwrap_or(autosar_ecuc_bridge::app::DEFAULT_HOST_PORT);
     let token_file = token_file.unwrap_or_else(autosar_ecuc_bridge::app::token_file);
+    // Host 的业务循环、Token 校验和正常关闭都在 app::host 中实现。
     autosar_ecuc_bridge::app::host::run(port, &token_file)
 }

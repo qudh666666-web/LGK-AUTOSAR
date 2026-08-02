@@ -114,6 +114,8 @@ daVinci {
                 def after = matchingErrors(module)
                 send("OK: solved ${before.size() - after.size()} of ${before.size()} matching validation error(s)")
             }
+            // Rust 已从实际 ECUC 读取 definitionRef；DaVinci 据此精确选择生成器。
+            // 不在这里拼接芯片名、资源包名或 /MICROSAR 前缀。
             def generateModule = { module, definitionRef, send ->
                 generation {
                     if (module != null && !module.trim().isEmpty() && !module.equalsIgnoreCase("all")) {
@@ -127,6 +129,7 @@ daVinci {
                 send("OK: generation completed")
             }
 
+            // 使用随机本机端口，避免和其他 Bridge/DaVinci 会话争用固定端口。
             def server = new ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
             println "ECUC_BRIDGE_READY:${server.localPort}"
             while (true) {
@@ -140,6 +143,7 @@ daVinci {
                         send("ECUC_END")
                         break
                     }
+                    // 简单文本协议：LIST|module、SOLVE|module|targets、GEN|module|definitionRef。
                     def parts = request.split("\\|", 3)
                     def command = parts[0].trim().toUpperCase(Locale.ROOT)
                     def module = parts.length > 1 ? parts[1].trim() : "all"
@@ -148,6 +152,7 @@ daVinci {
                         switch (command) {
                             case "LIST": emitList(module, send); break
                             case "SOLVE": solve(module, targets, send); break
+                            // 对 GEN 而言第三段不是 targets，而是真实 definitionRef。
                             case "GEN": generateModule(module, targets, send); break
                             default: send("FAIL: unsupported command ${command}")
                         }

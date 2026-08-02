@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
+// 磁盘中的工程描述。旧字段名保留仅用于迁移。
 #[derive(Debug, Clone, Deserialize)]
 struct ConfigFile {
     #[serde(alias = "gyx_project_path")]
@@ -16,6 +17,7 @@ struct ConfigFile {
     davinci_command_path: Option<PathBuf>,
 }
 
+// 经过路径规范化和边界校验后的会话配置，Host 用它判断请求是否属于同一工程。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionConfig {
     pub project_path: PathBuf,
@@ -28,6 +30,7 @@ pub struct SessionConfig {
 
 impl SessionConfig {
     pub fn load(project_directory: &Path) -> Result<Self> {
+        // 配置文件只能描述它所在的 Cfg 目录，避免请求借配置跨到另一工程。
         let project_directory = canonical_directory(project_directory)
             .context("project path is not an accessible directory")?;
         let config_path = bridge_config_path(&project_directory);
@@ -72,6 +75,7 @@ impl SessionConfig {
     }
 
     pub fn dpa_file(&self) -> Result<PathBuf> {
+        // 多 DPA 工程必须显式选择；只有唯一 DPA 时才允许自动发现。
         if let Some(path) = &self.project_file {
             return Ok(path.clone());
         }
@@ -107,6 +111,7 @@ impl SessionConfig {
     }
 
     pub fn ensure_project_file(&self, path: &Path) -> Result<PathBuf> {
+        // edit_file 的安全边界：任何写入都必须发生在 project_path 内。
         if !path.is_absolute() {
             bail!("path must be absolute");
         }
@@ -128,6 +133,7 @@ impl SessionConfig {
 }
 
 fn canonical_project_file(project_path: &Path, path: &Path) -> Result<PathBuf> {
+    // 即使用户显式选择 DPA，也不能选择工程目录之外的文件。
     if !path.is_absolute() {
         bail!("project_file must be absolute");
     }
@@ -155,6 +161,7 @@ fn canonical_project_file(project_path: &Path, path: &Path) -> Result<PathBuf> {
 }
 
 fn canonical_davinci_command(path: &Path) -> Result<PathBuf> {
+    // 工具程序可以在 project_path 之外，但必须精确指向 DVCfgCmd.exe。
     if !path.is_absolute() {
         bail!("davinci_command_path must be absolute");
     }
@@ -177,6 +184,7 @@ fn canonical_davinci_command(path: &Path) -> Result<PathBuf> {
 }
 
 fn bridge_config_path(project_directory: &Path) -> PathBuf {
+    // 新名称优先；保留 gyx-vector.json 是为了平滑迁移旧项目。
     let public_config = project_directory.join("ecuc-bridge.json");
     if public_config.is_file() {
         public_config
