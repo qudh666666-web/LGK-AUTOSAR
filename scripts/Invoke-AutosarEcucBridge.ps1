@@ -1,4 +1,4 @@
-# 人和自动化工具的统一入口：负责准备请求和常驻 Host，
+﻿# 人和自动化工具的统一入口：负责准备请求和常驻 Host，
 # 不直接解析 ECUC，也不直接启动 DaVinci 生成器。
 [CmdletBinding(DefaultParameterSetName = 'Inline')]
 param(
