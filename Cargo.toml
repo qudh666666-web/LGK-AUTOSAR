@@ -1,5 +1,5 @@
 [package]
-name = "autosar-ecuc-bridge"
+name = "lgk-vector"
 version = "0.1.0"
 edition = "2021"
 description = "Open-source local bridge for licensed Vector DaVinci ECUC projects"
@@ -8,16 +8,16 @@ keywords = ["autosar", "ecuc", "davinci", "vector"]
 categories = ["command-line-utilities", "development-tools"]
 
 [lib]
-name = "autosar_ecuc_bridge"
+name = "lgk_vector"
 path = "src/lib.rs"
 
 [[bin]]
-name = "autosar-ecuc-bridge"
-path = "src/bin/autosar-ecuc-bridge.rs"
+name = "lgk-vector"
+path = "src/bin/lgk-vector.rs"
 
 [[bin]]
-name = "autosar-ecuc-bridge-host"
-path = "src/bin/autosar-ecuc-bridge-host.rs"
+name = "lgk-vector-host"
+path = "src/bin/lgk-vector-host.rs"
 
 [dependencies]
 anyhow = "1.0"

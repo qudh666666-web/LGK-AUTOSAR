@@ -1,4 +1,4 @@
-# AUTOSAR ECUC Bridge
+# LGK-Vector
 
 An open-source local command-line bridge for inspecting and updating AUTOSAR ECUC projects with a user-supplied, licensed Vector DaVinci Configurator installation.
 
@@ -19,13 +19,13 @@ cargo test --all-targets
 cargo build --release
 ```
 
-The release binaries are `autosar-ecuc-bridge` and `autosar-ecuc-bridge-host`. On Windows, keep both `.exe` files in the same directory.
+The release binaries are `lgk-vector` and `lgk-vector-host`. On Windows, keep both `.exe` files in the same directory.
 
 Before the first GitHub push, set the `repository` field in `Cargo.toml` to the real repository URL.
 
 ## Project configuration
 
-Create `ecuc-bridge.json` in the DaVinci Cfg directory:
+Create `lgk-vector.json` in the DaVinci Cfg directory:
 
 ```json
 {
@@ -47,13 +47,11 @@ If the directory contains several `.dpa` files, or the DaVinci installation cont
 
 The optional `project_file` must be a `.dpa` file inside `project_path`. The optional `davinci_command_path` must point directly to `DVCfgCmd.exe`. Without these fields, the original automatic discovery behavior remains unchanged.
 
-For migration only, the reader also accepts the former `gyx-vector.json` field names. New public projects should use `ecuc-bridge.json`.
-
 Run the executable from that Cfg directory and pass one JSON request:
 
 ```powershell
-autosar-ecuc-bridge.exe --start-host
-autosar-ecuc-bridge.exe '{"func":"find_module","module":"Com"}'
+lgk-vector.exe --start-host
+lgk-vector.exe '{"func":"find_module","module":"Com"}'
 ```
 
 The supplied PowerShell wrapper performs the host-start step automatically. Prefer it for automation and AI-tool integration.

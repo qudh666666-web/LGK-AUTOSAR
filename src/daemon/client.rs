@@ -14,7 +14,7 @@ use walkdir::WalkDir;
 use crate::project::SessionConfig;
 
 // 编译时把 Groovy 代理嵌入 EXE；运行时再写入临时目录交给 DVCfgCmd。
-const DAEMON_SCRIPT: &str = include_str!("../../assets/EcucBridgeDaemon.dvgroovy");
+const DAEMON_SCRIPT: &str = include_str!("../../assets/LGKVectorDaemon.dvgroovy");
 
 // 一个已启动的 DVCfgCmd/DaVinci 子进程及其本机通信信息。
 pub struct DaVinciClient {
@@ -33,13 +33,13 @@ impl DaVinciClient {
         let dpa = config.dpa_file()?;
         // 每个 DaVinci 会话使用独立临时目录，避免并发会话共用 Groovy 或日志。
         let runtime_dir = std::env::temp_dir().join(format!(
-            "autosar-ecuc-bridge-{}-{}",
+            "lgk-vector-{}-{}",
             std::process::id(),
             rand::random::<u64>()
         ));
         fs::create_dir(&runtime_dir)
             .with_context(|| format!("create runtime dir: {}", runtime_dir.display()))?;
-        let script_path = runtime_dir.join("EcucBridgeDaemon.dvgroovy");
+        let script_path = runtime_dir.join("LGKVectorDaemon.dvgroovy");
         fs::write(&script_path, DAEMON_SCRIPT)
             .with_context(|| format!("write script: {}", script_path.display()))?;
         let stdout_log = runtime_dir.join("DVCfgCmd.stdout.log");
@@ -54,7 +54,7 @@ impl DaVinciClient {
             .arg("--scriptLocations")
             .arg(&runtime_dir)
             .arg("--scriptTask")
-            .arg("EcucBridgeDaemon")
+            .arg("LGKVectorDaemon")
             .arg("--ignoreUserScriptLocations")
             .arg("--verbose")
             .arg("ERROR")
@@ -236,7 +236,7 @@ fn spawn_stdout_reader(
                 let _ = writeln!(log, "{line}");
             }
             if !sent {
-                if let Some(raw_port) = line.trim().strip_prefix("ECUC_BRIDGE_READY:") {
+                if let Some(raw_port) = line.trim().strip_prefix("LGK_VECTOR_READY:") {
                     if let Ok(port) = raw_port.parse::<u16>() {
                         let _ = port_sender.send(port);
                         sent = true;
@@ -268,7 +268,7 @@ fn cleanup_runtime_dir(path: &Path) {
         && path
             .file_name()
             .and_then(|value| value.to_str())
-            .is_some_and(|value| value.starts_with("autosar-ecuc-bridge-"))
+            .is_some_and(|value| value.starts_with("lgk-vector-"))
     {
         fs::remove_dir_all(path).ok();
     }

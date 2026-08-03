@@ -76,7 +76,7 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
 
     // 先完整写入临时文件并 sync，再复制覆盖原文件，降低中途写坏的风险。
     let temp_path = path.with_extension(format!(
-        "{}.autosar-ecuc-bridge.tmp",
+        "{}.lgk-vector.tmp",
         path.extension()
             .and_then(|value| value.to_str())
             .unwrap_or("tmp")

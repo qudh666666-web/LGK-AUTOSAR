@@ -1,7 +1,7 @@
 use std::fs;
 
-use autosar_ecuc_bridge::ops;
-use autosar_ecuc_bridge::project::SessionConfig;
+use lgk_vector::ops;
+use lgk_vector::project::SessionConfig;
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -90,7 +90,7 @@ fn fixture() -> (tempfile::TempDir, SessionConfig) {
     )
     .expect("template");
     fs::write(
-        project.join("ecuc-bridge.json"),
+        project.join("lgk-vector.json"),
         format!(
             "{{\"project_path\":{},\"tool_path\":{}}}",
             serde_json::to_string(&project).expect("project JSON"),
@@ -100,28 +100,6 @@ fn fixture() -> (tempfile::TempDir, SessionConfig) {
     .expect("config file");
     let config = SessionConfig::load(&project).expect("load session");
     (root, config)
-}
-
-#[test]
-fn accepts_legacy_configuration_for_migration() {
-    let root = tempdir().expect("tempdir");
-    let project = root.path().join("Cfg");
-    let tool = root.path().join("SIP");
-    fs::create_dir_all(&project).expect("project directory");
-    fs::create_dir_all(&tool).expect("tool directory");
-    fs::write(
-        project.join("gyx-vector.json"),
-        format!(
-            "{{\"gyx_project_path\":{},\"gyx_tool_path\":{}}}",
-            serde_json::to_string(&project).expect("project JSON"),
-            serde_json::to_string(&tool).expect("tool JSON")
-        ),
-    )
-    .expect("legacy config file");
-
-    let config = SessionConfig::load(&project).expect("load legacy session");
-    assert_eq!(config.project_path.file_name().unwrap(), "Cfg");
-    assert!(!config.project_path.to_string_lossy().starts_with(r"\\?\"));
 }
 
 #[test]
@@ -206,9 +184,9 @@ fn session_paths_are_accepted_by_legacy_java_tools() {
     let project = root.path().join("Cfg");
     let tool = root.path().join("SIP");
     fs::write(
-        project.join("gyx-vector.json"),
+        project.join("lgk-vector.json"),
         format!(
-            "{{\"gyx_project_path\":{},\"gyx_tool_path\":{}}}",
+            "{{\"project_path\":{},\"tool_path\":{}}}",
             serde_json::to_string(&project).expect("project JSON"),
             serde_json::to_string(&tool).expect("tool JSON")
         ),
@@ -284,7 +262,7 @@ fn supports_non_microsar_definitions_and_explicit_tool_selection() {
     )
     .expect("vendor definition");
     fs::write(
-        project.join("ecuc-bridge.json"),
+        project.join("lgk-vector.json"),
         format!(
             "{{\"project_path\":{},\"tool_path\":{},\"project_file\":{},\"davinci_command_path\":{}}}",
             serde_json::to_string(&project).expect("project JSON"),

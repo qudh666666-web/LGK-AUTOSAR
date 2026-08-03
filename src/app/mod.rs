@@ -34,5 +34,5 @@ pub fn token_file() -> PathBuf {
         .and_then(|path| path.parent().map(PathBuf::from))
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join(".autosar-ecuc-bridge").join("host.token")
+    base.join(".lgk-vector").join("host.token")
 }

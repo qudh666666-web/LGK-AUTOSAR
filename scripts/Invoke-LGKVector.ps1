@@ -12,7 +12,7 @@ param(
     [string]$RequestFile,
 
     [Parameter()]
-    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\autosar-ecuc-bridge.exe')
+    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\lgk-vector.exe')
 )
 
 # 先把用户输入统一成绝对路径，后续 Rust 端也会再次校验。
@@ -22,7 +22,7 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Bridge executable was not found: $ExecutablePath"
 }
 $executableDirectory = Split-Path -Parent $executable
-$hostExecutable = Join-Path $executableDirectory 'autosar-ecuc-bridge-host.exe'
+$hostExecutable = Join-Path $executableDirectory 'lgk-vector-host.exe'
 $hostPort = 32483
 
 function Test-BridgeHost {
@@ -47,7 +47,7 @@ function Start-BridgeHost {
     }
 
     # Token 不是许可证。它只防止本机其他进程随意调用 Host 端口。
-    $tokenDirectory = Join-Path $executableDirectory '.autosar-ecuc-bridge'
+    $tokenDirectory = Join-Path $executableDirectory '.lgk-vector'
     $tokenPath = Join-Path $tokenDirectory 'host.token'
     if (-not (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
         New-Item -ItemType Directory -Force -Path $tokenDirectory | Out-Null

@@ -11,7 +11,7 @@ fn main() {
 fn run() -> anyhow::Result<()> {
     // 这个 EXE 是一次性 CLI：支持内联 JSON、stdin 和请求文件三种输入。
     let mut args = std::env::args_os();
-    let executable = args.next().unwrap_or_else(|| "autosar-ecuc-bridge".into());
+    let executable = args.next().unwrap_or_else(|| "lgk-vector".into());
     let Some(raw) = args.next() else {
         anyhow::bail!(
             "Usage: {} --request-file <path> | --stdin | '{{\"func\":\"find_module\",\"module\":\"Com\"}}'",
@@ -26,7 +26,7 @@ fn run() -> anyhow::Result<()> {
         if args.next().is_some() {
             anyhow::bail!("--start-host does not accept another argument");
         }
-        autosar_ecuc_bridge::app::cli::ensure_host()?;
+        lgk_vector::app::cli::ensure_host()?;
         println!("resident host ready");
         return Ok(());
     }
@@ -55,9 +55,9 @@ fn run() -> anyhow::Result<()> {
             raw
         }
     };
-    // 当前工作目录就是 Cfg；SessionConfig 会从这里读取 ecuc-bridge.json。
+    // 当前工作目录就是 Cfg；SessionConfig 会从这里读取 lgk-vector.json。
     let project = std::env::current_dir()?;
-    let output = autosar_ecuc_bridge::app::cli::run(&project, &raw)?;
+    let output = lgk_vector::app::cli::run(&project, &raw)?;
     println!("{output}");
     Ok(())
 }

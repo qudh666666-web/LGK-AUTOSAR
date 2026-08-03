@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 // 磁盘中的工程描述。旧字段名保留仅用于迁移。
 #[derive(Debug, Clone, Deserialize)]
 struct ConfigFile {
-    #[serde(alias = "gyx_project_path")]
+    #[serde(alias = "LGK_project_path", alias = "lgk_project_path")]
     project_path: PathBuf,
-    #[serde(alias = "gyx_tool_path")]
+    #[serde(alias = "LGK_tool_path", alias = "lgk_tool_path")]
     tool_path: PathBuf,
     #[serde(default)]
     project_file: Option<PathBuf>,
@@ -184,13 +184,8 @@ fn canonical_davinci_command(path: &Path) -> Result<PathBuf> {
 }
 
 fn bridge_config_path(project_directory: &Path) -> PathBuf {
-    // 新名称优先；保留 gyx-vector.json 是为了平滑迁移旧项目。
-    let public_config = project_directory.join("ecuc-bridge.json");
-    if public_config.is_file() {
-        public_config
-    } else {
-        project_directory.join("gyx-vector.json")
-    }
+    // 每个 DaVinci Cfg 目录只读取自己的 LGK-Vector 配置。
+    project_directory.join("lgk-vector.json")
 }
 
 fn canonical_directory(path: &Path) -> Result<PathBuf> {

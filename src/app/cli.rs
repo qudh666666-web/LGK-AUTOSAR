@@ -183,11 +183,11 @@ fn start_host(token_path: &Path) -> Result<()> {
 fn host_executable(directory: &Path) -> PathBuf {
     #[cfg(windows)]
     {
-        directory.join("autosar-ecuc-bridge-host.exe")
+        directory.join("lgk-vector-host.exe")
     }
     #[cfg(not(windows))]
     {
-        directory.join("autosar-ecuc-bridge-host")
+        directory.join("lgk-vector-host")
     }
 }
 

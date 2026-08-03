@@ -29,8 +29,8 @@ fn run() -> anyhow::Result<()> {
             other => anyhow::bail!("unsupported argument: {other}"),
         }
     }
-    let port = port.unwrap_or(autosar_ecuc_bridge::app::DEFAULT_HOST_PORT);
-    let token_file = token_file.unwrap_or_else(autosar_ecuc_bridge::app::token_file);
+    let port = port.unwrap_or(lgk_vector::app::DEFAULT_HOST_PORT);
+    let token_file = token_file.unwrap_or_else(lgk_vector::app::token_file);
     // Host 的业务循环、Token 校验和正常关闭都在 app::host 中实现。
-    autosar_ecuc_bridge::app::host::run(port, &token_file)
+    lgk_vector::app::host::run(port, &token_file)
 }
