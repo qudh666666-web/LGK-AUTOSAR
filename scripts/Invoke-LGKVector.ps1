@@ -12,7 +12,10 @@ param(
     [string]$RequestFile,
 
     [Parameter()]
-    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\lgk-vector.exe')
+    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\lgk-vector.exe'),
+
+    [Parameter()]
+    [switch]$ValidateOnly
 )
 
 # 先把用户输入统一成绝对路径，后续 Rust 端也会再次校验。
@@ -91,6 +94,66 @@ try {
     }
 
     $requestObject = [System.IO.File]::ReadAllText($requestPath) | ConvertFrom-Json -ErrorAction Stop
+    $allowedFunctions = @(
+        'inspect_ecuc_containers',
+        'find_module',
+        'find_bsw_module',
+        'find_module_template',
+        'get_bsw_module_template',
+        'get_param_definition',
+        'get_bsw_param_definition',
+        'locate_container',
+        'edit_file',
+        'get_errors_list',
+        'auto_solve_errors',
+        'generate_code',
+        'shutdown_host'
+    )
+    $requestItems = @($requestObject)
+    if ($requestItems.Count -eq 0) {
+        throw 'Request must contain at least one LGK-Vector function call'
+    }
+    foreach ($item in $requestItems) {
+        if (($null -eq $item) -or ($item.PSObject.Properties.Name -notcontains 'func')) {
+            throw "Every request item must contain a 'func' field"
+        }
+        if ($allowedFunctions -notcontains [string]$item.func) {
+            throw "Unsupported LGK-Vector function: $($item.func)"
+        }
+    }
+
+    if ($ValidateOnly) {
+        $configPath = Join-Path $project 'lgk-vector.json'
+        $config = [System.IO.File]::ReadAllText($configPath) | ConvertFrom-Json -ErrorAction Stop
+        $configuredProject = if ($config.PSObject.Properties.Name -contains 'project_path') {
+            [string]$config.project_path
+        } else {
+            [string]$config.LGK_project_path
+        }
+        $configuredTool = if ($config.PSObject.Properties.Name -contains 'tool_path') {
+            [string]$config.tool_path
+        } else {
+            [string]$config.LGK_tool_path
+        }
+        if ([string]::IsNullOrWhiteSpace($configuredProject) -or
+            [string]::IsNullOrWhiteSpace($configuredTool)) {
+            throw 'lgk-vector.json must define project_path/tool_path (legacy LGK_* names are accepted)'
+        }
+        $resolvedConfiguredProject = (Resolve-Path -LiteralPath $configuredProject -ErrorAction Stop).Path
+        $resolvedTool = (Resolve-Path -LiteralPath $configuredTool -ErrorAction Stop).Path
+        if (-not [string]::Equals($project.TrimEnd('\'), $resolvedConfiguredProject.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Configured project_path does not match ProjectPath: $resolvedConfiguredProject"
+        }
+        [pscustomobject]@{
+            project_path = $project
+            tool_path = $resolvedTool
+            executable_path = $executable
+            functions = @($requestItems | ForEach-Object { $_.func })
+            valid = $true
+        } | ConvertTo-Json -Depth 4
+        return
+    }
+
     # shutdown 是独立控制命令：不应为了关闭而新启动一个 Host。
     $isShutdown = ($requestObject -isnot [System.Array]) -and ($requestObject.func -eq 'shutdown_host')
 

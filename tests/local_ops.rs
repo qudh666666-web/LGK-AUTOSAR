@@ -270,6 +270,26 @@ fn session_paths_are_accepted_by_legacy_java_tools() {
 }
 
 #[test]
+fn accepts_legacy_lgk_config_field_names() {
+    let (root, expected) = fixture();
+    let project = root.path().join("Cfg");
+    let tool = root.path().join("SIP");
+    fs::write(
+        project.join("lgk-vector.json"),
+        format!(
+            "{{\"LGK_project_path\":{},\"LGK_tool_path\":{}}}",
+            serde_json::to_string(&project).expect("project JSON"),
+            serde_json::to_string(&tool).expect("tool JSON")
+        ),
+    )
+    .expect("legacy config file");
+
+    let config = SessionConfig::load(&project).expect("load legacy session");
+    assert_eq!(config.project_path, expected.project_path);
+    assert_eq!(config.tool_path, expected.tool_path);
+}
+
+#[test]
 fn supports_non_microsar_definitions_and_explicit_tool_selection() {
     let root = tempdir().expect("tempdir");
     let project = root.path().join("GenericCfg");
