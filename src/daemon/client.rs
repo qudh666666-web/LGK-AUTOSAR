@@ -82,9 +82,15 @@ impl DaVinciClient {
             Ok(port) => port,
             Err(error) => {
                 if let Some(status) = child.try_wait()? {
-                    bail!("start daemon failed with {status}");
+                    bail!(startup_failure_detail(
+                        &runtime_dir,
+                        &format!("DaVinci daemon exited with {status}")
+                    ));
                 }
-                bail!("start daemon timeout: {error}");
+                bail!(startup_failure_detail(
+                    &runtime_dir,
+                    &format!("DaVinci daemon did not become ready: {error}")
+                ));
             }
         };
         Ok(Self {
@@ -262,6 +268,42 @@ fn create_log(path: &Path) -> Option<File> {
     OpenOptions::new().create(true).append(true).open(path).ok()
 }
 
+fn startup_failure_detail(runtime_dir: &Path, reason: &str) -> String {
+    let stdout_log = runtime_dir.join("DVCfgCmd.stdout.log");
+    let stderr_log = runtime_dir.join("DVCfgCmd.stderr.log");
+    let combined = [&stdout_log, &stderr_log]
+        .into_iter()
+        .filter_map(|path| fs::read_to_string(path).ok())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lower = combined.to_ascii_lowercase();
+    let detail = if lower.contains(".dpa") && lower.contains("locked by another application") {
+        "The .dpa project is locked by another application. Close the DaVinci GUI before a DaVinci-backed request, or use inspect_ecuc_containers for read-only ECUC inspection."
+            .to_string()
+    } else {
+        combined
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .rev()
+            .take(8)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
+    let detail = if detail.is_empty() {
+        "No diagnostic text was written by DVCfgCmd.".to_string()
+    } else {
+        detail
+    };
+    format!(
+        "{reason}. {detail} Logs and the generated bridge script were preserved at {}",
+        runtime_dir.display()
+    )
+}
+
 fn cleanup_runtime_dir(path: &Path) {
     let temp = std::env::temp_dir();
     if path.starts_with(&temp)
@@ -285,7 +327,11 @@ fn hide_window(_command: &mut Command) {}
 
 #[cfg(test)]
 mod tests {
-    use super::generation_command;
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::{generation_command, startup_failure_detail};
 
     #[test]
     fn generation_uses_actual_vendor_definition_ref() {
@@ -294,5 +340,20 @@ mod tests {
             "GEN|Nm|/VendorStack/Nm"
         );
         assert_eq!(generation_command("all", None).expect("all"), "GEN|all");
+    }
+
+    #[test]
+    fn startup_failure_explains_dpa_lock_and_preserves_log_location() {
+        let runtime = tempdir().expect("runtime");
+        fs::write(
+            runtime.path().join("DVCfgCmd.stderr.log"),
+            "The project file (.dpa) is locked by another application",
+        )
+        .expect("log");
+
+        let message = startup_failure_detail(runtime.path(), "daemon exited");
+        assert!(message.contains("locked by another application"));
+        assert!(message.contains("inspect_ecuc_containers"));
+        assert!(message.contains(&runtime.path().display().to_string()));
     }
 }

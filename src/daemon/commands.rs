@@ -26,10 +26,29 @@ impl CommandDispatcher {
                 if items.is_empty() {
                     bail!("request array must not be empty");
                 }
+                let inspect_count = items
+                    .iter()
+                    .filter(|item| request_func(item) == Some("inspect_ecuc_containers"))
+                    .count();
+                if inspect_count != 0 && inspect_count != items.len() {
+                    bail!(
+                        "inspect_ecuc_containers cannot be mixed with other functions in one batch"
+                    );
+                }
                 let results = items
                     .iter()
                     .map(|item| self.dispatch_one(config, item))
                     .collect::<Result<Vec<_>>>()?;
+                if inspect_count == items.len() {
+                    let flattened = results
+                        .into_iter()
+                        .flat_map(|result| match result {
+                            Value::Array(items) => items,
+                            other => vec![other],
+                        })
+                        .collect();
+                    return Ok(Value::Array(flattened));
+                }
                 Ok(Value::Array(results))
             }
             Value::Object(_) => self.dispatch_one(config, &parsed),
@@ -59,6 +78,7 @@ impl CommandDispatcher {
             "get_param_definition" | "get_bsw_param_definition" => {
                 ops::get_param_definition::execute(config, request)
             }
+            "inspect_ecuc_containers" => ops::inspect_ecuc_containers::execute(config, request),
             "locate_container" => ops::locate_container::execute(config, request),
             "edit_file" => ops::edit_file::execute(config, request),
             "get_errors_list" => {
@@ -114,6 +134,10 @@ impl CommandDispatcher {
         }
         Ok(self.davinci.as_ref().expect("initialized"))
     }
+}
+
+fn request_func(request: &Value) -> Option<&str> {
+    request.get("func").and_then(Value::as_str)
 }
 
 fn optional_module(request: &Value) -> &str {

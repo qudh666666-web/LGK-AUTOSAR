@@ -1,5 +1,6 @@
 use std::fs;
 
+use lgk_vector::daemon::commands::CommandDispatcher;
 use lgk_vector::ops;
 use lgk_vector::project::SessionConfig;
 use serde_json::json;
@@ -142,6 +143,72 @@ fn locates_container_by_definition_and_name() {
         result["containers"][0]["start_line"].as_u64().unwrap()
             < result["containers"][0]["end_line"].as_u64().unwrap()
     );
+}
+
+#[test]
+fn inspects_configured_container_values_without_starting_davinci() {
+    let (_root, config) = fixture();
+    let result = ops::inspect_ecuc_containers::execute(
+        &config,
+        &json!({
+            "module": "Com",
+            "container": "ComSignal",
+            "short_name_regex": "^SignalA$",
+            "params": ["ComBitPosition"]
+        }),
+    )
+    .expect("inspect");
+
+    assert_eq!(result.as_array().expect("array").len(), 1);
+    assert_eq!(result[0]["short_name"], "SignalA");
+    assert_eq!(result[0]["container_path"], "/ComConfig/SignalA");
+    assert_eq!(result[0]["values"]["ComBitPosition"], "8");
+}
+
+#[test]
+fn inspects_by_full_definition_ref_and_comma_separated_params() {
+    let (_root, config) = fixture();
+    let result = ops::inspect_ecuc_containers::execute(
+        &config,
+        &json!({
+            "module": "Com",
+            "definition_ref": "/MICROSAR/Com/ComConfig/ComSignal",
+            "params": "ComBitPosition, MissingParameter"
+        }),
+    )
+    .expect("inspect");
+
+    assert_eq!(
+        result[0]["definition_ref"],
+        "/MICROSAR/Com/ComConfig/ComSignal"
+    );
+    assert_eq!(result[0]["values"]["ComBitPosition"], "8");
+    assert!(result[0]["values"].get("MissingParameter").is_none());
+}
+
+#[test]
+fn aggregates_multiple_inspection_requests_into_one_result_array() {
+    let (_root, config) = fixture();
+    let raw = serde_json::to_string(&json!([
+        {
+            "func": "inspect_ecuc_containers",
+            "module": "Com",
+            "container": "ComSignal"
+        },
+        {
+            "func": "inspect_ecuc_containers",
+            "module": "Com",
+            "definition_ref": "/MICROSAR/Com/ComConfig/ComSignal"
+        }
+    ]))
+    .expect("request JSON");
+    let result = CommandDispatcher::new()
+        .dispatch_batch(&config, &raw)
+        .expect("batch inspect");
+
+    assert_eq!(result.as_array().expect("flat array").len(), 2);
+    assert_eq!(result[0]["short_name"], "SignalA");
+    assert_eq!(result[1]["short_name"], "SignalA");
 }
 
 #[test]
