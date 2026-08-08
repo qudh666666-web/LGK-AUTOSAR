@@ -5,21 +5,23 @@ description: Use LGK-Vector for local Vector DaVinci ECUC inspection, verified c
 
 # LGK-Vector
 
-This skill is also the LGK-Vector source tree. When `Cargo.toml`, `src/`,
-`scripts/`, and `tests/` are present beside this file, inspect and modify that
-source directly. Do not substitute or modify a separately installed tool.
+This skill is also the LGK-Vector source tree. The canonical shared installation
+is `D:\Tools\LGK-Vector`. Codex discovers it through a directory junction at
+`C:\Users\<user>\.codex\skills\lgk-vector`, so every AUTOSAR project reads and
+updates the same source. Do not copy the tool into individual projects.
 
 ## Source and runtime discovery
 
-Prefer locations in this order:
+Resolve the current skill directory. It must contain `Cargo.toml`, `src/`,
+`scripts/`, and `tests/`; on the standard Windows setup it is a junction to
+`D:\Tools\LGK-Vector`. If it is missing, use the central source path explicitly
+or run `scripts/Install-LGKVectorSkill.ps1`. Do not search for or create a
+project-local tool copy.
 
-1. The current skill root when it contains `Cargo.toml` and `src/`.
-2. A project-local `Vector/LGK-Vector` directory containing this skill and source.
-3. A path explicitly supplied by the user.
-
-Use `scripts/Invoke-LGKVector.ps1` as the normal runtime entry. Keep
-`lgk-vector.exe` and `lgk-vector-host.exe` beside each other. Read
-`docs/跨工程接入.md` when installing or updating another project.
+Use `scripts/Invoke-LGKVector.ps1` from the central source as the normal runtime
+entry. It uses root release binaries when present, otherwise
+`target/release/lgk-vector.exe` and its adjacent host. Read
+`docs/跨工程接入.md` when connecting another project.
 
 ## Mandatory ECUC workflow
 
@@ -88,9 +90,9 @@ After a source change:
 3. Run `cargo build --release --locked` when publishing binaries.
 4. Update `CHANGELOG.md` with date, implementation commit, purpose,
    validation, and limitations.
-5. Use `scripts/Sync-LGKVectorPackage.ps1` to update a project-local package.
-6. Commit source and project-package changes in their own repositories; never
-   stage unrelated AUTOSAR or build output.
+5. Commit tool changes only in the central LGK-Vector repository.
+6. In the AUTOSAR repository, commit only its own ECUC and generated outputs;
+   never vendor the LGK-Vector source or stage unrelated build output.
 
 Do not add customer DPA/ARXML/DBC files, Vector SIP content, licenses,
 proprietary binaries, extracted vendor scripts, credentials, or generated

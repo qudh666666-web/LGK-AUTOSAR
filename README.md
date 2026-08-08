@@ -21,6 +21,22 @@ cargo build --release
 
 The release binaries are `lgk-vector` and `lgk-vector-host`. On Windows, keep both `.exe` files in the same directory.
 
+## Shared Windows installation
+
+Keep one writable source tree for all projects, normally `D:\Tools\LGK-Vector`. Do not copy the tool into every AUTOSAR repository. Build it once, then install the Codex Skill as a directory junction to the same source:
+
+```powershell
+& "D:\Tools\LGK-Vector\scripts\Install-LGKVectorSkill.ps1"
+```
+
+The default junction is `C:\Users\<user>\.codex\skills\lgk-vector`. Every Codex task then sees the D-drive `SKILL.md`, Rust source, tests, scripts, and Git history through that link. Each AUTOSAR project keeps only its own `lgk-vector.json` in the DaVinci Cfg directory and calls the central wrapper:
+
+```powershell
+& "D:\Tools\LGK-Vector\scripts\Invoke-LGKVector.ps1" `
+  -ProjectPath "D:\Work\Vehicle\Cfg" `
+  -Request '{"func":"find_module","module":"Com"}'
+```
+
 Before the first GitHub push, set the `repository` field in `Cargo.toml` to the real repository URL.
 
 ## Project configuration
@@ -71,4 +87,4 @@ Supported functions are `inspect_ecuc_containers`, `find_module`, `find_module_t
 
 ## Help and release policy
 
-Read the Chinese walkthrough in `docs/使用说明.md` before the first project edit. For a source-visible Codex installation and project-package updates, read `docs/跨工程接入.md`. Report reproducible defects through the GitHub issue tracker after removing customer files, credentials, license material, and proprietary Vector content. Intellectual-property reports should use the repository host's private reporting route or the repository contact published by its maintainer; a report is handled by removing or replacing the disputed material, not by retaining it until a complaint arrives.
+Read the Chinese walkthrough in `docs/使用说明.md` before the first project edit. For the shared D-drive installation and connecting another project, read `docs/跨工程接入.md`. Report reproducible defects through the GitHub issue tracker after removing customer files, credentials, license material, and proprietary Vector content. Intellectual-property reports should use the repository host's private reporting route or the repository contact published by its maintainer; a report is handled by removing or replacing the disputed material, not by retaining it until a complaint arrives.
