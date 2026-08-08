@@ -21,7 +21,8 @@ project-local tool copy.
 Use `scripts/Invoke-LGKVector.ps1` from the central source as the normal runtime
 entry. It uses root release binaries when present, otherwise
 `target/release/lgk-vector.exe` and its adjacent host. Read
-`docs/跨工程接入.md` when connecting another project.
+`docs/跨工程接入.md` when connecting another project or when the user asks how
+to install, configure, call, troubleshoot, or maintain LGK-Vector.
 
 ## Mandatory ECUC workflow
 
