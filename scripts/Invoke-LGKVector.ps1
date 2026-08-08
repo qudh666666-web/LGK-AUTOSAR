@@ -12,7 +12,14 @@ param(
     [string]$RequestFile,
 
     [Parameter()]
-    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\lgk-vector.exe'),
+    [string]$ExecutablePath = $(
+        $rootExecutable = Join-Path $PSScriptRoot '..\lgk-vector.exe'
+        if (Test-Path -LiteralPath $rootExecutable -PathType Leaf) {
+            $rootExecutable
+        } else {
+            Join-Path $PSScriptRoot '..\target\release\lgk-vector.exe'
+        }
+    ),
 
     [Parameter()]
     [switch]$ValidateOnly

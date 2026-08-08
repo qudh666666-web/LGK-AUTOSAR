@@ -1,6 +1,8 @@
 /target/
 /dist/
 /.lgk-vector/
+/lgk-vector.exe
+/lgk-vector-host.exe
 *.log
 *.tmp
 *.user
