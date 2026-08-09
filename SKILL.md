@@ -67,6 +67,23 @@ For a CAN0/CAN1 switch, inspect and change this chain in order:
 5. Generate `CanTrcv`, then only the affected integration modules. Verify the
    active generated C/H files and build exclusions; do not run full generation.
 
+### Controller replacement checklist
+
+For a CAN1-to-CAN0 (or inverse) replacement, treat these as one atomic change:
+
+- Map the target network to the target `Can` controller/node and its ISR.
+- Bind `CanTrcv` to the transceiver physically connected to that controller,
+  including RX, TX, enable/standby DIO references; do not reuse the old
+  transceiver merely because its driver still compiles.
+- Replace the old transceiver implementation name in `EcuC`, `EcuM`, `BswM`,
+  `CanIf`, generated callouts, build inputs, and driver include/source paths.
+- Keep each Tx PDU bound to the target `CanIf` controller and target Can HW
+  object; confirm the generated comments/config tables identify that network.
+- Ensure startup BswM requests **Full Communication for the target main
+  network**, not a secondary/inter-ECU network. CommunicationAllowed alone is
+  insufficient; without the matching `ComM_RequestComMode(...FULL...)`, all
+  application frames can remain silent.
+
 ### Zero-traffic acceptance gate
 
 Never declare a CAN switch fixed merely because ECUC generation or a Tasking
