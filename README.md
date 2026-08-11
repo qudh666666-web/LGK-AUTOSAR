@@ -89,13 +89,13 @@ lgk-vector.exe '{"func":"find_module","module":"Com"}'
 
 The supplied PowerShell wrapper performs the host-start step automatically. Prefer it for automation and AI-tool integration.
 
-Supported functions are `inspect_ecuc_containers`, `find_module`, `find_module_template`, `get_param_definition`, `locate_container`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`, and `shutdown_host`. For existing automation, `find_bsw_module`, `get_bsw_module_template`, and `get_bsw_param_definition` remain accepted aliases.
+Supported functions are `inspect_ecuc_containers`, `find_module`, `find_module_template`, `get_param_definition`, `locate_container`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`, `update_project`, `import_dbc`, and `shutdown_host`. For existing automation, `find_bsw_module`, `get_bsw_module_template`, and `get_bsw_param_definition` remain accepted aliases.
 
 `inspect_ecuc_containers` reads saved ECUC ARXML locally and does not start DaVinci. It can therefore inspect a project while the GUI holds the `.dpa` lock. Multiple inspection requests in one array return one flat result array; do not mix inspection requests with other functions in the same batch.
 
-Multi-item request arrays are read-only. Send `edit_file`, `auto_solve_errors`, `generate_code`, and `shutdown_host` as standalone requests so a later failure cannot leave an earlier mutation half-applied.
+Multi-item request arrays are read-only. Send `edit_file`, `auto_solve_errors`, `generate_code`, `update_project`, `import_dbc`, and `shutdown_host` as standalone requests so a later failure cannot leave an earlier mutation half-applied.
 
-Before `edit_file`, save and close the same project in the DaVinci GUI so its in-memory model cannot overwrite the external ARXML change. `edit_file` refuses files outside `project_path` and requires exact current text in an `expected` object before it will write. `generate_code` never defaults to a full build: pass a concrete module, or explicitly pass `"module":"all"`. `auto_solve_errors` requires an explicit module plus `confirmed: true`. Always send `shutdown_host` after the final request.
+Before `edit_file`, `update_project`, or `import_dbc`, save and close the same project in the DaVinci GUI. LGK-Vector also closes its own previously opened DaVinci session before `edit_file`. `import_dbc` accepts an absolute source DBC and a project-relative `registered_path`; the destination must already be registered in the DPA. It snapshots the Cfg tree, replaces that input, runs DaVinci Project Update, and reports elapsed time and logs. If conversion or update fails, DPA, ARXML, DBC, logs, and newly added project files are rolled back together while failure logs remain outside the project for diagnosis. `generate_code` never defaults to a full build: pass a concrete module, or explicitly pass `"module":"all"`. `auto_solve_errors` requires an explicit module plus `confirmed: true`. Always send `shutdown_host` after the final request.
 
 The public suite verifies the synthetic local path and failure handling. A real DaVinci generation still requires a lawful matching DaVinci/SIP installation and a disposable licensed test project; passing the public suite is strong evidence, not a claim that no defect can exist on every proprietary tool version.
 

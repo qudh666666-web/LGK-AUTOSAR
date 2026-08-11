@@ -17,9 +17,11 @@ Target release tag: `v0.3.0` (not published yet)
 - `edit_file` 强制要求精确 `expected` 原文，配置已变化时拒绝写入，并由 PowerShell 包装器保留具体错误原因；
 - 新增 Windows GitHub CI、开源内容守卫、目标平台依赖许可证守卫、贡献与安全说明，以及独立 onboarding 测试；
 - 发布包改为按 Git 公共候选清单逐文件复制，并用独立回归测试证明被忽略的客户 DBC/ARXML 不会进入 ZIP；
+- 新增 `update_project` 和 `import_dbc`：通过 DaVinci 官方 Project Update 更新 DPA 已登记通信输入，返回耗时与日志；失败时恢复完整 Cfg 树并保留外部诊断日志，避免 DaVinci 已改 DPA/ARXML 后只恢复 DBC；
+- `edit_file` 在写磁盘前正常关闭同一 resident Host 已打开的 DaVinci 会话，避免旧内存模型覆盖刚写入的 ECUC；
 - 保持 MCU、SIP 和厂商定义路径无关，不在仓库中携带客户 DPA/ARXML/DBC、Vector 文件、许可证或发布二进制。
 
-验证：格式检查和严格 Clippy 通过；23 个 Rust 测试通过；release CLI/Host 均为 v0.3.0；发布包从零接入测试连续运行 3 次，每次 34 项均通过，doctor 为 0.040–0.141 秒、首次本地请求为 1.420–1.453 秒、完整一轮为 6.322–6.535 秒；发布清单 5 项隔离断言、开源内容与 Windows GNU 目标 34 个依赖包的许可证守卫通过；resident host 每轮均正常关闭并释放两个端口。另在合法的本机 DaVinci 环境完成了一次只读 `get_errors_list`，未改 ECUC，也未生成 C/H/LSL。
+验证：格式检查和严格 Clippy 通过；26 个 Rust 测试通过；release CLI/Host 均为 v0.3.0。公开发布包从零接入测试连续运行 3 次，每次 36 项均通过。另在合法、可丢弃的 DaVinci 工程完成真实集成测试：无效 DBC 返回 1 个转换器错误、4 个警告后，完整 Cfg 逐文件验证为 0 修改、0 新增、0 缺失；有效 DBC Project Update 为 0 个转换器错误；后续 DaVinci 全工程错误列表为 0，7 个受影响模块逐个生成成功；resident host 正常关闭且两个端口释放。
 
 限制：公开测试使用完全合成的 ECUC/SIP 夹具，不运行专有 DaVinci 生成器；doctor 是静态预检，不启动 DaVinci，也不证明许可证或生成链可用。真实 `generate_code` 和 `auto_solve_errors` 仍须在合法、匹配且可丢弃的 DaVinci/SIP 测试工程中单独验证，不能据此承诺覆盖所有 Vector 版本。现有私有 Git 历史含个人邮箱和旧名称，历史守卫会拒绝直接发布；GitHub 必须使用审计后的 clean-root 公共历史。
 

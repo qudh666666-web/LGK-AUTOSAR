@@ -146,16 +146,25 @@ Avoid these previously observed mistakes:
 - Do not mix `inspect_ecuc_containers` with DaVinci-backed functions in one
   batch. Keep read-only batches separate.
 - Multi-item arrays are read-only. Send `edit_file`, `auto_solve_errors`,
-  `generate_code`, and `shutdown_host` as standalone requests so a batch can
+  `generate_code`, `update_project`, `import_dbc`, and `shutdown_host` as standalone requests so a batch can
   never leave a partially applied mutation or generation.
 - Keep the central tool at `D:\Tools\LGK-Vector`; remove project-local legacy
   bridge configs, scripts, and binaries instead of maintaining two tools.
 
 Supported functions are `inspect_ecuc_containers`, `find_module`,
 `find_module_template`, `get_param_definition`, `locate_container`,
-`edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`, and
-`shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
+`edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
+`update_project`, `import_dbc`, and `shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
 accepted.
+
+Use `update_project` to run the DPA's registered Project Update inputs. Use
+`import_dbc` with an absolute `source` and a project-relative `registered_path`
+when replacing a DBC already registered by the DPA. Both are standalone,
+mutating requests and require the same DaVinci project to be saved and closed.
+LGK-Vector snapshots the complete Cfg tree and restores it when Project Update
+fails, because DaVinci may touch DPA, ECUC and System Description files before
+reporting a converter error. A disk `edit_file` request first closes any
+DaVinci session previously opened by the same resident Host.
 
 `auto_solve_errors` requires a fresh error list, user approval, and
 `confirmed:true`. Never treat generated C/H/LSL edits as an ECUC repair.

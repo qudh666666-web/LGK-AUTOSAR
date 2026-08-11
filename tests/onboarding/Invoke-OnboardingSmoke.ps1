@@ -124,6 +124,11 @@ try {
     Assert-True ($doctor.version -eq '0.3.0') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
+    $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
+    $updateDoctor = (($updateDoctorOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($updateDoctor.valid -eq $true) 'update_project must be accepted by wrapper and doctor'
+    Assert-True ($updateDoctor.davinci_executed -eq $false) 'update_project doctor must remain non-executing'
+
     $configPath = Join-Path $project 'lgk-vector.json'
     $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ($config.PSObject.Properties.Name -notcontains 'project_path') 'portable config must derive project_path from its own directory'

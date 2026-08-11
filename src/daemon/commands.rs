@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
 use crate::daemon::client::DaVinciClient;
+use crate::daemon::project_update;
 use crate::ops;
 use crate::project::SessionConfig;
 use crate::vector::module_index::ModuleIndex;
@@ -125,6 +126,7 @@ impl CommandDispatcher {
                 }
                 validate_davinci_dependencies(config)?;
             }
+            "update_project" | "import_dbc" => project_update::validate(config, request)?,
             "shutdown_host" => {}
             _ => bail!("unsupported func: {func}"),
         }
@@ -147,7 +149,15 @@ impl CommandDispatcher {
             }
             "inspect_ecuc_containers" => ops::inspect_ecuc_containers::execute(config, request),
             "locate_container" => ops::locate_container::execute(config, request),
-            "edit_file" => ops::edit_file::execute(config, request),
+            "edit_file" => {
+                // A previous get_errors/generate request may have left DaVinci's
+                // in-memory project open. Close that owned session before a
+                // disk edit so the stale model cannot later overwrite ARXML.
+                if let Some(client) = self.davinci.take() {
+                    client.shutdown()?;
+                }
+                ops::edit_file::execute(config, request)
+            }
             "get_errors_list" => {
                 // 错误列表来自 DaVinci 的校验模型，不能靠静态 XML 解析替代。
                 let module = optional_module(request)?;
@@ -189,6 +199,14 @@ impl CommandDispatcher {
                     "definition_ref": definition_ref,
                     "message": message
                 }))
+            }
+            "update_project" | "import_dbc" => {
+                // Project Update must own the DPA exclusively. Close an already
+                // opened Groovy-backed session before starting the one-shot CLI.
+                if let Some(client) = self.davinci.take() {
+                    client.shutdown()?;
+                }
+                project_update::execute(config, request)
             }
             "shutdown_host" => {
                 bail!("shutdown_host is handled by the resident host protocol")
@@ -248,7 +266,7 @@ fn validate_batch_shape(parsed: &Value) -> Result<(Vec<&Value>, bool)> {
             .any(|item| request_func(item).is_some_and(is_mutating_func))
     {
         bail!(
-            "edit_file, auto_solve_errors, and generate_code must be standalone requests; multi-item batches are read-only"
+            "edit_file, auto_solve_errors, generate_code, update_project, and import_dbc must be standalone requests; multi-item batches are read-only"
         );
     }
     Ok((items, inspect_count != 0))
@@ -265,7 +283,10 @@ fn request_func(request: &Value) -> Option<&str> {
 }
 
 fn is_mutating_func(func: &str) -> bool {
-    matches!(func, "edit_file" | "auto_solve_errors" | "generate_code")
+    matches!(
+        func,
+        "edit_file" | "auto_solve_errors" | "generate_code" | "update_project" | "import_dbc"
+    )
 }
 
 fn optional_module(request: &Value) -> Result<&str> {

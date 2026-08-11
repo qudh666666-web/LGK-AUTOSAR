@@ -111,6 +111,8 @@ try {
         'get_errors_list',
         'auto_solve_errors',
         'generate_code',
+        'update_project',
+        'import_dbc',
         'shutdown_host'
     )
     $requestItems = @($requestObject)
