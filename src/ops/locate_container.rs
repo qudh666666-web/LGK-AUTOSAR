@@ -25,7 +25,7 @@ struct Match {
 }
 
 pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
-    let module = required_string(request, "module")?;
+    let module = super::required_module(request)?;
     let definition_ref = required_string(request, "definition_ref")?;
     let short_name_regex = request
         .get("short_name_regex")
@@ -42,14 +42,22 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
             module_info.config_path.display()
         )
     })?;
-    let short_name = Regex::new(r"<SHORT-NAME>([^<]+)</SHORT-NAME>")?;
-    let definition = Regex::new(r#"<DEFINITION-REF(?:\s+[^>]*)?>([^<]+)</DEFINITION-REF>"#)?;
+    // Parse container boundaries and identifying child tags as a token stream over
+    // the whole document. DaVinci and vendor tools may wrap XML tags across lines,
+    // so a line-by-line regex silently misses otherwise valid containers.
+    let tokens = Regex::new(
+        r#"(?s)(?P<open><ECUC-CONTAINER-VALUE(?:\s+[^>]*)?>)|(?P<close></ECUC-CONTAINER-VALUE\s*>)|(?P<short><SHORT-NAME(?:\s+[^>]*)?>\s*(?P<short_value>[^<]+?)\s*</SHORT-NAME\s*>)|(?P<definition><DEFINITION-REF(?:\s+[^>]*)?>\s*(?P<definition_value>[^<]+?)\s*</DEFINITION-REF\s*>)"#,
+    )?;
+    let line_starts = std::iter::once(0)
+        .chain(raw.match_indices('\n').map(|(index, _)| index + 1))
+        .collect::<Vec<_>>();
 
     let mut stack: Vec<Frame> = Vec::new();
     let mut matches = Vec::new();
-    for (index, line) in raw.lines().enumerate() {
-        let line_number = index + 1;
-        if line.contains("<ECUC-CONTAINER-VALUE") {
+    for captures in tokens.captures_iter(&raw) {
+        let token = captures.get(0).expect("token capture");
+        let line_number = line_number_at(&line_starts, token.start());
+        if captures.name("open").is_some() {
             stack.push(Frame {
                 start_line: line_number,
                 short_name: None,
@@ -59,20 +67,18 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
 
         if let Some(frame) = stack.last_mut() {
             if frame.short_name.is_none() {
-                frame.short_name = short_name
-                    .captures(line)
-                    .and_then(|captures| captures.get(1))
+                frame.short_name = captures
+                    .name("short_value")
                     .map(|value| value.as_str().trim().to_string());
             }
             if frame.definition_ref.is_none() {
-                frame.definition_ref = definition
-                    .captures(line)
-                    .and_then(|captures| captures.get(1))
+                frame.definition_ref = captures
+                    .name("definition_value")
                     .map(|value| value.as_str().trim().to_string());
             }
         }
 
-        if line.contains("</ECUC-CONTAINER-VALUE>") {
+        if captures.name("close").is_some() {
             let Some(frame) = stack.pop() else {
                 continue;
             };
@@ -106,6 +112,10 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
         "count": matches.len(),
         "containers": matches,
     }))
+}
+
+fn line_number_at(line_starts: &[usize], byte_offset: usize) -> usize {
+    line_starts.partition_point(|start| *start <= byte_offset)
 }
 
 fn required_string<'a>(request: &'a Value, name: &str) -> Result<&'a str> {

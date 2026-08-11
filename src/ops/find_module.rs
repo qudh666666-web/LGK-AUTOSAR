@@ -7,12 +7,7 @@ use crate::vector::template_index::read_module_definition_ref;
 
 pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     // 模块名来自 DPA 的 Module Name；它不是文件路径，也不是 definition_ref。
-    let module = request
-        .get("module")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("module is required"))?;
+    let module = super::required_module(request)?;
     let index = ModuleIndex::load(config)?;
     if module.eq_ignore_ascii_case("all") {
         return Ok(serde_json::to_value(index.all())?);

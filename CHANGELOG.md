@@ -2,6 +2,40 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## v0.3.0 - 2026-08-11
+
+Target release tag: `v0.3.0` (not published yet)
+
+- 将工程配置缩减为最小 `tool_path`，工程目录由 `lgk-vector.json` 所在位置推导；多 DPA 或多 DaVinci 命令时仍可显式选择；
+- 新增首次接入初始化器和非写入 doctor，并支持从任意 PowerShell 工作目录传入相对的 DPA/命令路径；
+- 为 CLI/Host 增加版本一致性校验、请求结构预检、三分钟超时与自有 DaVinci 进程树清理；
+- 为 resident host 增加协议版本和源码构建标识握手；发布包另带双 EXE 的 SHA-256 配对清单，明确拒绝旧 Host、部分重建的 EXE 组合或占用固定端口的其他程序；
+- 修复 Windows PowerShell 首次启动时常驻 Host 继承输出句柄造成的脚本卡死；Host 忙碌或关闭期间拒绝新请求，`shutdown_host` 等待业务端口和健康端口全部释放后再返回；
+- 将 DaVinci 返回的 `FAIL:` 提升为调用失败，避免生成或自动求解异常被误报成成功；
+- 统一批请求的 doctor 与真实执行规则；多项数组只允许只读操作，所有写入、自动求解和生成必须单独发送；
+- 支持带 UTF-8 BOM 的 Windows JSON，修复嵌套 ECUC 参数元数据串到父容器的问题，并正确索引 `ECUC-CHOICE-CONTAINER-DEF`；
+- `edit_file` 强制要求精确 `expected` 原文，配置已变化时拒绝写入，并由 PowerShell 包装器保留具体错误原因；
+- 新增 Windows GitHub CI、开源内容守卫、目标平台依赖许可证守卫、贡献与安全说明，以及独立 onboarding 测试；
+- 发布包改为按 Git 公共候选清单逐文件复制，并用独立回归测试证明被忽略的客户 DBC/ARXML 不会进入 ZIP；
+- 保持 MCU、SIP 和厂商定义路径无关，不在仓库中携带客户 DPA/ARXML/DBC、Vector 文件、许可证或发布二进制。
+
+验证：格式检查和严格 Clippy 通过；23 个 Rust 测试通过；release CLI/Host 均为 v0.3.0；发布包从零接入测试连续运行 3 次，每次 34 项均通过，doctor 为 0.040–0.141 秒、首次本地请求为 1.420–1.453 秒、完整一轮为 6.322–6.535 秒；发布清单 5 项隔离断言、开源内容与 Windows GNU 目标 34 个依赖包的许可证守卫通过；resident host 每轮均正常关闭并释放两个端口。另在合法的本机 DaVinci 环境完成了一次只读 `get_errors_list`，未改 ECUC，也未生成 C/H/LSL。
+
+限制：公开测试使用完全合成的 ECUC/SIP 夹具，不运行专有 DaVinci 生成器；doctor 是静态预检，不启动 DaVinci，也不证明许可证或生成链可用。真实 `generate_code` 和 `auto_solve_errors` 仍须在合法、匹配且可丢弃的 DaVinci/SIP 测试工程中单独验证，不能据此承诺覆盖所有 Vector 版本。现有私有 Git 历史含个人邮箱和旧名称，历史守卫会拒绝直接发布；GitHub 必须使用审计后的 clean-root 公共历史。
+
+## v0.2.3 - 2026-08-09
+
+Status: superseded by v0.3.0 before a standalone release.
+
+- Accept `module_name` as a compatibility alias while keeping `module` canonical, and explain that callers must use an ECUC short name rather than a generated driver package name.
+- Enforce a three-minute budget for ordinary changes: 45 seconds for DaVinci startup, 120 seconds for an operation, and 15 seconds for shutdown.
+- Stop the owned DVCfgCmd process after a transport or timeout failure to prevent a stalled generation from retaining several gigabytes of memory.
+- Add the CAN0/CAN1 fast path and the observed configuration, generation, batching, stale-model, and cleanup mistakes to the global skill.
+
+Validation: `git diff --check` passed. Rust formatting, tests, and release build were not run because Cargo is not installed or discoverable on this machine.
+
+Limitation: release binaries are not updated until the Rust toolchain is available and `cargo test --all-targets --locked` plus `cargo build --release --locked` pass.
+
 ## v0.2.2 - 2026-08-08
 
 文档提交：`c7f2b69`

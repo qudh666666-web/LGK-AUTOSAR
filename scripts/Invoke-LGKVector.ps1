@@ -33,59 +33,56 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
 }
 $executableDirectory = Split-Path -Parent $executable
 $hostExecutable = Join-Path $executableDirectory 'lgk-vector-host.exe'
-$hostPort = 32483
 
-function Test-BridgeHost {
-    # Host 只监听本机回环地址；这里的短连接仅用于探测是否已启动。
-    $client = [System.Net.Sockets.TcpClient]::new()
-    try {
-        $task = $client.ConnectAsync('127.0.0.1', $hostPort)
-        return $task.Wait(250) -and $client.Connected
-    } catch {
-        return $false
-    } finally {
-        $client.Dispose()
+function Get-BridgeIdentity([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Bridge executable was not found: $Path"
+    }
+    $output = @(& $Path --version 2>&1)
+    if ($LASTEXITCODE -ne 0 -or $output.Count -ne 1) {
+        throw "Bridge executable cannot complete the required --version check: $Path. The CLI/Host pair is stale or incomplete; rebuild both with 'cargo build --release' (or install one matching GitHub release package) before using this wrapper."
+    }
+    $match = [regex]::Match(
+        [string]$output[0],
+        '^(?<name>lgk-vector(?:-host)?) (?<version>\d+\.\d+\.\d+) protocol=(?<protocol>\d+) build=(?<build>dev|[0-9a-f]{7,64})$'
+    )
+    if (-not $match.Success) {
+        throw "Unexpected bridge version output from ${Path}: $($output -join ' ')"
+    }
+    [pscustomobject]@{
+        Version = $match.Groups['version'].Value
+        Protocol = $match.Groups['protocol'].Value
+        Build = $match.Groups['build'].Value
+    }
+}
+
+$cliIdentity = Get-BridgeIdentity -Path $executable
+$hostIdentity = Get-BridgeIdentity -Path $hostExecutable
+if ($cliIdentity.Version -ne $hostIdentity.Version -or
+    $cliIdentity.Protocol -ne $hostIdentity.Protocol -or
+    $cliIdentity.Build -ne $hostIdentity.Build) {
+    throw "Bridge executable identities do not match: CLI=$($cliIdentity.Version)/p$($cliIdentity.Protocol)/$($cliIdentity.Build), Host=$($hostIdentity.Version)/p$($hostIdentity.Protocol)/$($hostIdentity.Build)"
+}
+
+$pairManifestPath = Join-Path $executableDirectory 'lgk-vector-pair.json'
+if (Test-Path -LiteralPath $pairManifestPath -PathType Leaf) {
+    $pairManifest = [System.IO.File]::ReadAllText($pairManifestPath) | ConvertFrom-Json -ErrorAction Stop
+    $actualCliHash = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash
+    $actualHostHash = (Get-FileHash -LiteralPath $hostExecutable -Algorithm SHA256).Hash
+    if ($actualCliHash -ine [string]$pairManifest.cli_sha256 -or
+        $actualHostHash -ine [string]$pairManifest.host_sha256) {
+        throw 'Bridge executable integrity does not match lgk-vector-pair.json; reinstall one complete release package instead of mixing binaries'
     }
 }
 
 function Start-BridgeHost {
-    if (Test-BridgeHost) {
-        return
+    # 由 Rust CLI 完成 Token、协议、版本和端口身份探测，避免只凭 TCP
+    # 端口可连接就误判为当前 LGK-Vector Host。CLI 在创建 Host 前会清除
+    # PowerShell 重定向句柄的继承标志，因此这里捕获输出不会被常驻进程拖住。
+    $hostOutput = @(& $executable --start-host 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Bridge host failed to start or pass its protocol probe: $($hostOutput -join [Environment]::NewLine)"
     }
-    if (-not (Test-Path -LiteralPath $hostExecutable -PathType Leaf)) {
-        throw "Bridge host executable was not found: $hostExecutable"
-    }
-
-    # Token 不是许可证。它只防止本机其他进程随意调用 Host 端口。
-    $tokenDirectory = Join-Path $executableDirectory '.lgk-vector'
-    $tokenPath = Join-Path $tokenDirectory 'host.token'
-    if (-not (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
-        New-Item -ItemType Directory -Force -Path $tokenDirectory | Out-Null
-        $bytes = New-Object byte[] 32
-        $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        try {
-            $generator.GetBytes($bytes)
-        } finally {
-            $generator.Dispose()
-        }
-        $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
-        [System.IO.File]::WriteAllText($tokenPath, $token, [System.Text.UTF8Encoding]::new($false))
-    }
-
-    # Host 与请求程序必须使用同一份 Token；Host 是独立后台进程。
-    $quotedTokenPath = '"' + $tokenPath + '"'
-    Start-Process -FilePath $hostExecutable `
-        -ArgumentList @('--port', $hostPort, '--token-file', $quotedTokenPath) `
-        -WindowStyle Hidden | Out-Null
-    # 不假设 Start-Process 返回时 Host 已完成监听，最多等 15 秒。
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    while (-not (Test-BridgeHost)) {
-        if ([DateTime]::UtcNow -ge $deadline) {
-            throw 'Bridge host did not become ready within 15 seconds'
-        }
-        Start-Sleep -Milliseconds 100
-    }
-    Start-Sleep -Seconds 1
 }
 
 $temporaryRequest = $null
@@ -130,34 +127,16 @@ try {
     }
 
     if ($ValidateOnly) {
-        $configPath = Join-Path $project 'lgk-vector.json'
-        $config = [System.IO.File]::ReadAllText($configPath) | ConvertFrom-Json -ErrorAction Stop
-        $configuredProject = if ($config.PSObject.Properties.Name -contains 'project_path') {
-            [string]$config.project_path
-        } else {
-            [string]$config.LGK_project_path
+        Push-Location -LiteralPath $project
+        try {
+            $doctorOutput = @(& $executable --doctor --request-file $requestPath 2>&1)
+            if ($LASTEXITCODE -ne 0) {
+                throw "LGK-Vector doctor failed: $($doctorOutput -join [Environment]::NewLine)"
+            }
+            $doctorOutput | Write-Output
+        } finally {
+            Pop-Location
         }
-        $configuredTool = if ($config.PSObject.Properties.Name -contains 'tool_path') {
-            [string]$config.tool_path
-        } else {
-            [string]$config.LGK_tool_path
-        }
-        if ([string]::IsNullOrWhiteSpace($configuredProject) -or
-            [string]::IsNullOrWhiteSpace($configuredTool)) {
-            throw 'lgk-vector.json must define project_path/tool_path (legacy LGK_* names are accepted)'
-        }
-        $resolvedConfiguredProject = (Resolve-Path -LiteralPath $configuredProject -ErrorAction Stop).Path
-        $resolvedTool = (Resolve-Path -LiteralPath $configuredTool -ErrorAction Stop).Path
-        if (-not [string]::Equals($project.TrimEnd('\'), $resolvedConfiguredProject.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Configured project_path does not match ProjectPath: $resolvedConfiguredProject"
-        }
-        [pscustomobject]@{
-            project_path = $project
-            tool_path = $resolvedTool
-            executable_path = $executable
-            functions = @($requestItems | ForEach-Object { $_.func })
-            valid = $true
-        } | ConvertTo-Json -Depth 4
         return
     }
 
@@ -170,10 +149,12 @@ try {
             Start-BridgeHost
         }
         # 真正的请求处理从这里进入 Rust CLI，再转给 resident Host。
-        & $executable --request-file $requestPath
-        if ($LASTEXITCODE -ne 0) {
-            throw "Bridge request failed with exit code $LASTEXITCODE"
+        $requestOutput = @(& $executable --request-file $requestPath 2>&1)
+        $requestExitCode = $LASTEXITCODE
+        if ($requestExitCode -ne 0) {
+            throw "Bridge request failed: $($requestOutput -join [Environment]::NewLine)"
         }
+        $requestOutput | Write-Output
     } finally {
         Pop-Location
     }

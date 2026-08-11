@@ -44,6 +44,7 @@ pub fn first_descendant_text(element: &Element, names: &[&str]) -> Option<String
 
 pub fn is_definition(element: &Element) -> bool {
     element.name == "ECUC-PARAM-CONF-CONTAINER-DEF"
+        || element.name == "ECUC-CHOICE-CONTAINER-DEF"
         || element.name == "ECUC-FUNCTION-NAME-DEF"
         || element.name.ends_with("-PARAM-DEF")
         || element.name.ends_with("-REFERENCE-DEF")

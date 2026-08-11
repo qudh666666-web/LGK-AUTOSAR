@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize)]
 struct ConfigFile {
     #[serde(alias = "LGK_project_path", alias = "lgk_project_path")]
-    project_path: PathBuf,
+    #[serde(default)]
+    project_path: Option<PathBuf>,
     #[serde(alias = "LGK_tool_path", alias = "lgk_tool_path")]
     tool_path: PathBuf,
     #[serde(default)]
@@ -36,18 +37,23 @@ impl SessionConfig {
         let config_path = bridge_config_path(&project_directory);
         let raw = fs::read_to_string(&config_path)
             .with_context(|| format!("missing or unreadable {}", config_path.display()))?;
-        let parsed: ConfigFile = serde_json::from_str(&raw)
+        let raw = raw.strip_prefix('\u{feff}').unwrap_or(&raw);
+        let parsed: ConfigFile = serde_json::from_str(raw)
             .with_context(|| format!("invalid JSON in {}", config_path.display()))?;
 
-        if !parsed.project_path.is_absolute() {
-            bail!("project_path must be absolute");
-        }
         if !parsed.tool_path.is_absolute() {
             bail!("tool_path must be absolute");
         }
 
-        let configured_project = canonical_directory(&parsed.project_path)
-            .context("project_path is not an accessible directory")?;
+        let configured_project = match parsed.project_path {
+            Some(path) => {
+                if !path.is_absolute() {
+                    bail!("project_path must be absolute when it is specified");
+                }
+                canonical_directory(&path).context("project_path is not an accessible directory")?
+            }
+            None => project_directory.clone(),
+        };
         if configured_project != project_directory {
             bail!(
                 "project_path must equal the directory containing the bridge configuration: configured={}, actual={}",
@@ -64,7 +70,7 @@ impl SessionConfig {
             .transpose()?;
         let davinci_command_path = parsed
             .davinci_command_path
-            .map(|path| canonical_davinci_command(&path))
+            .map(|path| canonical_davinci_command(&tool_path, &path))
             .transpose()?;
         Ok(Self {
             project_path: configured_project,
@@ -134,9 +140,11 @@ impl SessionConfig {
 
 fn canonical_project_file(project_path: &Path, path: &Path) -> Result<PathBuf> {
     // 即使用户显式选择 DPA，也不能选择工程目录之外的文件。
-    if !path.is_absolute() {
-        bail!("project_file must be absolute");
-    }
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        project_path.join(path)
+    };
     let canonical = normalize_canonical_path(
         path.canonicalize()
             .with_context(|| format!("project_file not found: {}", path.display()))?,
@@ -160,11 +168,13 @@ fn canonical_project_file(project_path: &Path, path: &Path) -> Result<PathBuf> {
     Ok(canonical)
 }
 
-fn canonical_davinci_command(path: &Path) -> Result<PathBuf> {
+fn canonical_davinci_command(tool_path: &Path, path: &Path) -> Result<PathBuf> {
     // 工具程序可以在 project_path 之外，但必须精确指向 DVCfgCmd.exe。
-    if !path.is_absolute() {
-        bail!("davinci_command_path must be absolute");
-    }
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        tool_path.join(path)
+    };
     let canonical = normalize_canonical_path(
         path.canonicalize()
             .with_context(|| format!("davinci_command_path not found: {}", path.display()))?,

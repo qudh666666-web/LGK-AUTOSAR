@@ -6,12 +6,7 @@ use crate::vector::param_definition_index::ParamDefinitionIndex;
 use crate::vector::template_index::TemplateIndex;
 
 pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
-    let module = request
-        .get("module")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("module is required"))?;
+    let module = super::required_module(request)?;
     let template = TemplateIndex::load(config, module)?;
     let definitions = ParamDefinitionIndex::load(&template)?;
 

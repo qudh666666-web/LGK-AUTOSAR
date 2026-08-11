@@ -14,6 +14,18 @@ fn run() -> anyhow::Result<()> {
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
         match arg.to_string_lossy().as_ref() {
+            "--version" | "-V" => {
+                if args.next().is_some() {
+                    anyhow::bail!("--version does not accept another argument");
+                }
+                println!(
+                    "lgk-vector-host {} protocol={} build={}",
+                    env!("CARGO_PKG_VERSION"),
+                    lgk_vector::app::HOST_PROTOCOL_VERSION,
+                    lgk_vector::app::BUILD_ID
+                );
+                return Ok(());
+            }
             "--port" => {
                 let value = args
                     .next()

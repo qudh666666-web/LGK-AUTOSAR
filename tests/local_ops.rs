@@ -80,6 +80,21 @@ fn fixture() -> (tempfile::TempDir, SessionConfig) {
                     </ECUC-INTEGER-PARAM-DEF>
                   </PARAMETERS>
                 </ECUC-PARAM-CONF-CONTAINER-DEF>
+                <ECUC-CHOICE-CONTAINER-DEF>
+                  <SHORT-NAME>ComGwDestination</SHORT-NAME>
+                  <LOWER-MULTIPLICITY>0</LOWER-MULTIPLICITY>
+                  <CHOICES>
+                    <ECUC-PARAM-CONF-CONTAINER-DEF>
+                      <SHORT-NAME>ComGwSignal</SHORT-NAME>
+                      <PARAMETERS>
+                        <ECUC-INTEGER-PARAM-DEF>
+                          <SHORT-NAME>ComGwSignalBitPosition</SHORT-NAME>
+                          <MAX>4095</MAX>
+                        </ECUC-INTEGER-PARAM-DEF>
+                      </PARAMETERS>
+                    </ECUC-PARAM-CONF-CONTAINER-DEF>
+                  </CHOICES>
+                </ECUC-CHOICE-CONTAINER-DEF>
               </SUB-CONTAINERS>
             </ECUC-PARAM-CONF-CONTAINER-DEF>
           </CONTAINERS>
@@ -104,6 +119,17 @@ fn fixture() -> (tempfile::TempDir, SessionConfig) {
 }
 
 #[test]
+fn accepts_utf8_bom_in_project_configuration() {
+    let (root, config) = fixture();
+    let config_path = config.project_path.join("lgk-vector.json");
+    let raw = fs::read_to_string(&config_path).expect("read config");
+    fs::write(&config_path, format!("\u{feff}{raw}")).expect("write BOM config");
+    let reloaded = SessionConfig::load(&config.project_path).expect("load BOM config");
+    assert_eq!(reloaded.project_path, config.project_path);
+    drop(root);
+}
+
+#[test]
 fn finds_module_and_definition() {
     let (_root, config) = fixture();
     let module =
@@ -122,6 +148,36 @@ fn finds_module_and_definition() {
     assert_eq!(
         definition["definitions"][0]["value_tag"],
         "ECUC-NUMERICAL-PARAM-VALUE"
+    );
+
+    let template = ops::find_module_template::execute(&config, &json!({"module": "Com"}))
+        .expect("find module template");
+    let definitions = template["definitions"].as_array().expect("definitions");
+    let container = definitions
+        .iter()
+        .find(|item| item["name"] == "ComSignal")
+        .expect("ComSignal definition");
+    assert_eq!(container["range"], json!({}));
+    assert!(container["ref_target"].is_null());
+    let parameter = definitions
+        .iter()
+        .find(|item| item["name"] == "ComBitPosition")
+        .expect("ComBitPosition definition");
+    assert_eq!(parameter["range"]["max"], "65535");
+    let choice = definitions
+        .iter()
+        .find(|item| item["name"] == "ComGwDestination")
+        .expect("choice container definition");
+    assert_eq!(choice["group"], "containers");
+    assert_eq!(choice["value_tag"], "ECUC-CONTAINER-VALUE");
+    assert_eq!(choice["range"], json!({"lower_multiplicity": "0"}));
+    let choice_child = definitions
+        .iter()
+        .find(|item| item["name"] == "ComGwSignal")
+        .expect("choice child definition");
+    assert_eq!(
+        choice_child["definition_ref"],
+        "/MICROSAR/Com/ComConfig/ComGwDestination/ComGwSignal"
     );
 }
 
@@ -143,6 +199,35 @@ fn locates_container_by_definition_and_name() {
         result["containers"][0]["start_line"].as_u64().unwrap()
             < result["containers"][0]["end_line"].as_u64().unwrap()
     );
+}
+
+#[test]
+fn locates_container_when_xml_tags_are_wrapped_across_lines() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let raw = fs::read_to_string(&file).expect("read config");
+    let wrapped = raw
+        .replace(
+            "<SHORT-NAME>SignalA</SHORT-NAME>",
+            "<SHORT-NAME>\n              SignalA\n            </SHORT-NAME>",
+        )
+        .replace(
+            "<DEFINITION-REF DEST=\"ECUC-PARAM-CONF-CONTAINER-DEF\">/MICROSAR/Com/ComConfig/ComSignal</DEFINITION-REF>",
+            "<DEFINITION-REF\n              DEST=\"ECUC-PARAM-CONF-CONTAINER-DEF\">\n              /MICROSAR/Com/ComConfig/ComSignal\n            </DEFINITION-REF>",
+        );
+    fs::write(&file, wrapped).expect("write wrapped config");
+
+    let result = ops::locate_container::execute(
+        &config,
+        &json!({
+            "module": "Com",
+            "definition_ref": "/MICROSAR/Com/ComConfig/ComSignal",
+            "short_name_regex": "^SignalA$"
+        }),
+    )
+    .expect("locate wrapped XML");
+    assert_eq!(result["count"], 1);
+    assert_eq!(result["containers"][0]["short_name"], "SignalA");
 }
 
 #[test]
@@ -212,6 +297,70 @@ fn aggregates_multiple_inspection_requests_into_one_result_array() {
 }
 
 #[test]
+fn doctor_rejects_missing_required_fields_before_starting_davinci() {
+    let (_root, config) = fixture();
+    let missing_query_module =
+        CommandDispatcher::validate_batch(&config, r#"{"func":"find_module"}"#)
+            .expect_err("missing query module must fail");
+    assert!(missing_query_module
+        .to_string()
+        .contains("module is required"));
+
+    let implicit_full_generation =
+        CommandDispatcher::validate_batch(&config, r#"{"func":"generate_code"}"#)
+            .expect_err("implicit full generation must fail");
+    assert!(implicit_full_generation
+        .to_string()
+        .contains("module is required"));
+
+    let mixed_inspection = CommandDispatcher::validate_batch(
+        &config,
+        r#"[{"func":"inspect_ecuc_containers","module":"Com"},{"func":"find_module","module":"Com"}]"#,
+    )
+    .expect_err("doctor must reject the same mixed batch as execution");
+    assert!(mixed_inspection.to_string().contains("cannot be mixed"));
+}
+
+#[test]
+fn batch_validates_every_item_before_applying_an_edit() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("batch-edit.arxml");
+    fs::write(&file, "one\ntwo\nthree\n").expect("write batch edit file");
+    let raw = json!([
+        {
+            "func": "edit_file",
+            "path": file,
+            "expected": {"2": "two"},
+            "edits": {"2": "TWO"}
+        },
+        {"func": "find_module"}
+    ])
+    .to_string();
+
+    let error = CommandDispatcher::new()
+        .dispatch_batch(&config, &raw)
+        .expect_err("a mutating item must reject a multi-item batch before editing");
+    assert!(error.to_string().contains("must be standalone requests"));
+    assert_eq!(
+        fs::read_to_string(config.project_path.join("batch-edit.arxml"))
+            .expect("read unmodified batch file"),
+        "one\ntwo\nthree\n"
+    );
+}
+
+#[test]
+fn doctor_rejects_generation_inside_a_multi_item_batch() {
+    let (_root, config) = fixture();
+    let error = CommandDispatcher::validate_batch(
+        &config,
+        r#"[{"func":"find_module","module":"Com"},{"func":"generate_code","module":"Com"}]"#,
+    )
+    .expect_err("generation in a multi-item batch must be rejected before execution");
+
+    assert!(error.to_string().contains("must be standalone requests"));
+}
+
+#[test]
 fn edits_only_requested_line_and_preserves_crlf() {
     let (_root, config) = fixture();
     let file = config.project_path.join("edit.arxml");
@@ -220,6 +369,7 @@ fn edits_only_requested_line_and_preserves_crlf() {
         &config,
         &json!({
             "path": file,
+            "expected": {"2": "two"},
             "edits": {"2": "TWO"}
         }),
     )
@@ -228,6 +378,27 @@ fn edits_only_requested_line_and_preserves_crlf() {
     assert_eq!(
         fs::read_to_string(config.project_path.join("edit.arxml")).expect("read edited"),
         "one\r\nTWO\r\nthree\r\n"
+    );
+}
+
+#[test]
+fn refuses_edit_when_inspected_text_is_stale() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("stale.arxml");
+    fs::write(&file, "one\nchanged elsewhere\nthree\n").expect("write stale file");
+    let error = ops::edit_file::execute(
+        &config,
+        &json!({
+            "path": file,
+            "expected": {"2": "two"},
+            "edits": {"2": "TWO"}
+        }),
+    )
+    .expect_err("stale edit must fail");
+    assert!(error.to_string().contains("file changed"));
+    assert_eq!(
+        fs::read_to_string(config.project_path.join("stale.arxml")).expect("read unchanged"),
+        "one\nchanged elsewhere\nthree\n"
     );
 }
 
@@ -351,11 +522,8 @@ fn supports_non_microsar_definitions_and_explicit_tool_selection() {
     fs::write(
         project.join("lgk-vector.json"),
         format!(
-            "{{\"project_path\":{},\"tool_path\":{},\"project_file\":{},\"davinci_command_path\":{}}}",
-            serde_json::to_string(&project).expect("project JSON"),
+            "{{\"tool_path\":{},\"project_file\":\"GenericPlatform.dpa\",\"davinci_command_path\":\"DaVinci/Exec/DVCfgCmd.exe\"}}",
             serde_json::to_string(&tool).expect("tool JSON"),
-            serde_json::to_string(&project_file).expect("dpa JSON"),
-            serde_json::to_string(&command).expect("command JSON")
         ),
     )
     .expect("bridge config");

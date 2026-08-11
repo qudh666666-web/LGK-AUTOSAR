@@ -26,7 +26,7 @@ struct ContainerSnapshot {
 }
 
 pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
-    let module = required_string(request, "module")?;
+    let module = super::required_module(request)?;
     let definition_ref = optional_string(request, "definition_ref");
     let container = optional_string(request, "container");
     if definition_ref.is_none() && container.is_none() {
@@ -221,10 +221,6 @@ fn requested_params(request: &Value) -> Result<Option<BTreeSet<String>>> {
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
     Ok(Some(values))
-}
-
-fn required_string<'a>(request: &'a Value, name: &str) -> Result<&'a str> {
-    optional_string(request, name).ok_or_else(|| anyhow::anyhow!("{name} is required"))
 }
 
 fn optional_string<'a>(request: &'a Value, name: &str) -> Option<&'a str> {

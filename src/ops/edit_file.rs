@@ -51,6 +51,7 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
         .collect::<Vec<_>>();
 
     // 先校验所有范围，再从后往前替换，防止前面的插入改变后续行号。
+    validate_expected_lines(request, edits, &lines)?;
     let mut parsed = parse_edits(edits, lines.len())?;
     reject_overlaps(&parsed)?;
     parsed.sort_by_key(|edit| Reverse(edit.start));
@@ -95,6 +96,77 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
         "applied_edits": parsed.len(),
         "message": "Edited file",
     }))
+}
+
+/// Perform every edit precondition check without writing the target file.
+pub fn validate(config: &SessionConfig, request: &Value) -> Result<()> {
+    let path = request
+        .get("path")
+        .and_then(Value::as_str)
+        .map(Path::new)
+        .ok_or_else(|| anyhow::anyhow!("path is required"))?;
+    let path = config.ensure_project_file(path)?;
+    let edits = request
+        .get("edits")
+        .and_then(Value::as_object)
+        .ok_or_else(|| anyhow::anyhow!("edits must be an object"))?;
+    if edits.is_empty() {
+        bail!("edits must not be empty");
+    }
+    let original = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    let text_bytes = original
+        .strip_prefix(&[0xEF, 0xBB, 0xBF])
+        .unwrap_or(original.as_slice());
+    let text = std::str::from_utf8(text_bytes)
+        .with_context(|| format!("file is not UTF-8: {}", path.display()))?;
+    let normalized = text.replace("\r\n", "\n");
+    let lines = normalized
+        .strip_suffix('\n')
+        .unwrap_or(&normalized)
+        .split('\n')
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    validate_expected_lines(request, edits, &lines)?;
+    let parsed = parse_edits(edits, lines.len())?;
+    reject_overlaps(&parsed)
+}
+
+fn validate_expected_lines(
+    request: &Value,
+    edits: &Map<String, Value>,
+    lines: &[String],
+) -> Result<()> {
+    let expected = request
+        .get("expected")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "expected must contain the exact current text for every edit range; re-read the file before editing"
+            )
+        })?;
+    if expected.len() != edits.len() || edits.keys().any(|key| !expected.contains_key(key)) {
+        bail!("expected must contain exactly the same range keys as edits");
+    }
+    for (key, expected_value) in expected {
+        let expected_text = expected_value
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("expected value must be a string: {key}"))?
+            .replace("\r\n", "\n");
+        let (start, end) = parse_range(key)?;
+        if start == 0 || end < start || end > lines.len() {
+            bail!(
+                "edit range out of bounds: {key} (file has {} lines)",
+                lines.len()
+            );
+        }
+        let actual = lines[(start - 1)..end].join("\n");
+        if actual != expected_text {
+            bail!(
+                "edit precondition failed for range {key}; the file changed after it was inspected"
+            );
+        }
+    }
+    Ok(())
 }
 
 fn parse_edits(edits: &Map<String, Value>, line_count: usize) -> Result<Vec<Edit>> {

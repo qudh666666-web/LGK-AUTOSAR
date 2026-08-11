@@ -15,6 +15,10 @@ use crate::project::SessionConfig;
 
 // 编译时把 Groovy 代理嵌入 EXE；运行时再写入临时目录交给 DVCfgCmd。
 const DAEMON_SCRIPT: &str = include_str!("../../assets/LGKVectorDaemon.dvgroovy");
+const DAVINCI_START_TIMEOUT: Duration = Duration::from_secs(45);
+const DAVINCI_OPERATION_TIMEOUT: Duration = Duration::from_secs(120);
+const DAVINCI_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
+const DAVINCI_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
 
 // 一个已启动的 DVCfgCmd/DaVinci 子进程及其本机通信信息。
 pub struct DaVinciClient {
@@ -26,10 +30,7 @@ pub struct DaVinciClient {
 impl DaVinciClient {
     pub fn start(config: &SessionConfig) -> Result<Self> {
         // 用户可显式选择命令程序；否则保持旧行为，从 tool_path 自动发现。
-        let dvcfg = match &config.davinci_command_path {
-            Some(path) => path.clone(),
-            None => find_dvcfg(&config.tool_path)?,
-        };
+        let dvcfg = resolve_davinci_command(config)?;
         let dpa = config.dpa_file()?;
         // 每个 DaVinci 会话使用独立临时目录，避免并发会话共用 Groovy 或日志。
         let runtime_dir = std::env::temp_dir().join(format!(
@@ -65,32 +66,42 @@ impl DaVinciClient {
         let mut child = command
             .spawn()
             .with_context(|| format!("start {}", dvcfg.display()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("DVCfgCmd stdout pipe unavailable"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("DVCfgCmd stderr pipe unavailable"))?;
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                terminate_owned_child(&mut child);
+                bail!("DVCfgCmd stdout pipe unavailable");
+            }
+        };
+        let stderr = match child.stderr.take() {
+            Some(stderr) => stderr,
+            None => {
+                terminate_owned_child(&mut child);
+                bail!("DVCfgCmd stderr pipe unavailable");
+            }
+        };
         // Groovy 完成加载后会在 stdout 打印随机端口；在收到它之前不能发送命令。
         let (port_sender, port_receiver) = mpsc::sync_channel(1);
         spawn_stdout_reader(stdout, stdout_log, port_sender);
         spawn_log_reader(stderr, stderr_log);
 
-        let port = match port_receiver.recv_timeout(Duration::from_secs(300)) {
+        let port = match port_receiver.recv_timeout(DAVINCI_START_TIMEOUT) {
             Ok(port) => port,
             Err(error) => {
-                if let Some(status) = child.try_wait()? {
-                    bail!(startup_failure_detail(
-                        &runtime_dir,
-                        &format!("DaVinci daemon exited with {status}")
-                    ));
-                }
-                bail!(startup_failure_detail(
-                    &runtime_dir,
-                    &format!("DaVinci daemon did not become ready: {error}")
-                ));
+                let reason = match child.try_wait() {
+                    Ok(Some(status)) => format!("DaVinci daemon exited with {status}"),
+                    Ok(None) => {
+                        terminate_owned_child(&mut child);
+                        format!("DaVinci daemon did not become ready: {error}; process was stopped")
+                    }
+                    Err(wait_error) => {
+                        terminate_owned_child(&mut child);
+                        format!(
+                            "DaVinci daemon readiness failed: {error}; process status failed: {wait_error}; process was stopped"
+                        )
+                    }
+                };
+                bail!(startup_failure_detail(&runtime_dir, &reason));
             }
         };
         Ok(Self {
@@ -100,7 +111,7 @@ impl DaVinciClient {
         })
     }
 
-    pub fn list_errors(&self, module: &str) -> Result<Value> {
+    pub fn list_errors(&mut self, module: &str) -> Result<Value> {
         let lines = self.send(&format!("LIST|{module}"))?;
         let start = lines
             .iter()
@@ -117,7 +128,7 @@ impl DaVinciClient {
         serde_json::from_str(&raw).context("parse error list")
     }
 
-    pub fn solve_errors(&self, module: &str, targets: Option<&str>) -> Result<String> {
+    pub fn solve_errors(&mut self, module: &str, targets: Option<&str>) -> Result<String> {
         let command = match targets {
             Some(targets) if !targets.trim().is_empty() => {
                 format!("SOLVE|{module}|{}", targets.trim())
@@ -132,7 +143,7 @@ impl DaVinciClient {
             .join("\n"))
     }
 
-    pub fn generate(&self, module: &str, definition_ref: Option<&str>) -> Result<String> {
+    pub fn generate(&mut self, module: &str, definition_ref: Option<&str>) -> Result<String> {
         // 生成协议把真实 definition_ref 一并传给 Groovy。
         let command = generation_command(module, definition_ref)?;
         Ok(self
@@ -146,7 +157,7 @@ impl DaVinciClient {
     pub fn shutdown(mut self) -> Result<()> {
         // 正常关闭优先：让 DaVinci 自己保存/释放会话，而不是强制结束子进程。
         let _ = self.send("SHUTDOWN")?;
-        let deadline = Instant::now() + Duration::from_secs(60);
+        let deadline = Instant::now() + DAVINCI_SHUTDOWN_TIMEOUT;
         while Instant::now() < deadline {
             if self.child.try_wait()?.is_some() {
                 cleanup_runtime_dir(&self.runtime_dir);
@@ -154,31 +165,62 @@ impl DaVinciClient {
             }
             thread::sleep(Duration::from_millis(100));
         }
+        terminate_owned_child(&mut self.child);
         bail!(
-            "DaVinci daemon did not exit after SHUTDOWN; runtime preserved at {}",
+            "DaVinci daemon did not exit after SHUTDOWN and was force-stopped; runtime preserved at {}",
             self.runtime_dir.display()
         )
     }
 
-    fn send(&self, command: &str) -> Result<Vec<String>> {
+    fn send(&mut self, command: &str) -> Result<Vec<String>> {
+        let result = self.send_inner(command);
+        if result.is_err() {
+            terminate_owned_child(&mut self.child);
+        }
+        result
+    }
+
+    fn send_inner(&self, command: &str) -> Result<Vec<String>> {
         // 第二个端口同样只使用 127.0.0.1；它是 Rust 与 DaVinci 内 Groovy 的私有通道。
         let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.port);
         let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(10))
             .with_context(|| format!("connect to DaVinci daemon at {address}"))?;
-        stream.set_read_timeout(Some(Duration::from_secs(3600)))?;
+        stream.set_read_timeout(Some(DAVINCI_OPERATION_TIMEOUT))?;
         writeln!(stream, "{command}")?;
         stream.flush()?;
 
         let mut lines = Vec::new();
         for line in BufReader::new(stream).lines() {
-            let line = line?;
+            let line = line.context(
+                "failed to read the DaVinci response within the 120-second operation timeout",
+            )?;
             let done = line == "ECUC_END";
             lines.push(line);
             if done {
+                fail_if_da_vinci_reported_failure(&lines)?;
                 return Ok(lines);
             }
         }
         bail!("DaVinci daemon closed the connection without ECUC_END")
+    }
+}
+
+fn fail_if_da_vinci_reported_failure(lines: &[String]) -> Result<()> {
+    if let Some(message) = lines
+        .iter()
+        .find_map(|line| line.strip_prefix("FAIL:"))
+        .map(str::trim)
+    {
+        bail!("DaVinci daemon reported failure: {message}");
+    }
+    Ok(())
+}
+
+impl Drop for DaVinciClient {
+    fn drop(&mut self) {
+        // std::process::Child does not kill on drop. Always reap the process we
+        // own so an error path cannot leave DVCfgCmd consuming memory.
+        terminate_owned_child(&mut self.child);
     }
 }
 
@@ -197,20 +239,35 @@ fn generation_command(module: &str, definition_ref: Option<&str>) -> Result<Stri
     Ok(format!("GEN|{module}|{definition_ref}"))
 }
 
+pub(crate) fn resolve_davinci_command(config: &SessionConfig) -> Result<PathBuf> {
+    match &config.davinci_command_path {
+        Some(path) => Ok(path.clone()),
+        None => find_dvcfg(&config.tool_path),
+    }
+}
+
 fn find_dvcfg(tool_path: &Path) -> Result<PathBuf> {
-    let mut candidates = WalkDir::new(tool_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().is_file())
-        .filter(|entry| {
-            entry
+    let deadline = Instant::now() + DAVINCI_DISCOVERY_TIMEOUT;
+    let mut candidates = Vec::new();
+    for entry in WalkDir::new(tool_path).follow_links(false) {
+        if Instant::now() >= deadline {
+            bail!(
+                "DVCfgCmd.exe discovery exceeded 2 seconds under {}; set davinci_command_path explicitly",
+                tool_path.display()
+            );
+        }
+        let Ok(entry) = entry else {
+            continue;
+        };
+        if entry.file_type().is_file()
+            && entry
                 .file_name()
                 .to_string_lossy()
                 .eq_ignore_ascii_case("DVCfgCmd.exe")
-        })
-        .map(|entry| entry.into_path())
-        .collect::<Vec<_>>();
+        {
+            candidates.push(entry.into_path());
+        }
+    }
     candidates.sort();
     match candidates.as_slice() {
         [] => bail!(
@@ -228,6 +285,35 @@ fn find_dvcfg(tool_path: &Path) -> Result<PathBuf> {
         ),
     }
 }
+
+fn terminate_owned_child(child: &mut Child) {
+    if let Ok(Some(_)) = child.try_wait() {
+        return;
+    }
+    terminate_owned_process_tree(child);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(windows)]
+fn terminate_owned_process_tree(child: &Child) {
+    // DVCfgCmd may create helper JVM processes. taskkill receives the exact PID
+    // returned by Command::spawn and /T limits cleanup to that owned tree.
+    let mut command = Command::new("taskkill");
+    command
+        .arg("/PID")
+        .arg(child.id().to_string())
+        .arg("/T")
+        .arg("/F")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    hide_window(&mut command);
+    let _ = command.status();
+}
+
+#[cfg(not(windows))]
+fn terminate_owned_process_tree(_child: &Child) {}
 
 fn spawn_stdout_reader(
     stdout: impl std::io::Read + Send + 'static,
@@ -331,7 +417,20 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{generation_command, startup_failure_detail};
+    use super::{
+        fail_if_da_vinci_reported_failure, generation_command, startup_failure_detail,
+        DAVINCI_DISCOVERY_TIMEOUT, DAVINCI_OPERATION_TIMEOUT, DAVINCI_SHUTDOWN_TIMEOUT,
+        DAVINCI_START_TIMEOUT,
+    };
+
+    #[test]
+    fn ordinary_operation_budget_does_not_exceed_three_minutes() {
+        assert!(
+            DAVINCI_START_TIMEOUT + DAVINCI_OPERATION_TIMEOUT + DAVINCI_SHUTDOWN_TIMEOUT
+                <= std::time::Duration::from_secs(180)
+        );
+        assert!(DAVINCI_DISCOVERY_TIMEOUT <= std::time::Duration::from_secs(2));
+    }
 
     #[test]
     fn generation_uses_actual_vendor_definition_ref() {
@@ -340,6 +439,17 @@ mod tests {
             "GEN|Nm|/VendorStack/Nm"
         );
         assert_eq!(generation_command("all", None).expect("all"), "GEN|all");
+    }
+
+    #[test]
+    fn daemon_failure_line_is_never_reported_as_success() {
+        let lines = vec![
+            "FAIL: generator rejected the module".to_string(),
+            "ECUC_END".to_string(),
+        ];
+        let error = fail_if_da_vinci_reported_failure(&lines)
+            .expect_err("FAIL response must become an error");
+        assert!(error.to_string().contains("generator rejected the module"));
     }
 
     #[test]

@@ -30,10 +30,15 @@ to install, configure, call, troubleshoot, or maintain LGK-Vector.
 2. Use `find_module`, `get_param_definition`, `locate_container`, or
    `inspect_ecuc_containers` to establish the actual module, definition, and
    configured container.
-3. Modify ECUC only with a narrowly scoped `edit_file` request. Do not use a
-   general script or manual XML rewrite to bypass the tool.
+3. Before `edit_file`, save and close the same project in DaVinci GUI; an open
+   GUI may later overwrite external ARXML changes from its in-memory model.
+   Modify ECUC only with a narrowly scoped `edit_file` request. Include an
+   `expected` object with exactly the same ranges and the exact text just read;
+   the tool must reject the edit if that text has changed. Do not use a general
+   script or manual XML rewrite to bypass this precondition.
 4. Generate only the affected module unless full generation is explicitly
-   required.
+   required. `generate_code` and `auto_solve_errors` must name a module;
+   `module:"all"` is accepted only as an explicit opt-in.
 5. Report ECUC configuration changes separately from generated C/H/LSL output.
 6. Preserve unrelated user changes and stage only task files.
 7. End every resident-host session with `shutdown_host`.
@@ -140,10 +145,11 @@ Avoid these previously observed mistakes:
   generated output only after a targeted generator attempt.
 - Do not mix `inspect_ecuc_containers` with DaVinci-backed functions in one
   batch. Keep read-only batches separate.
-- One invalid batch item can abort the batch. Validate module names separately
-  before batching mutations or generation.
+- Multi-item arrays are read-only. Send `edit_file`, `auto_solve_errors`,
+  `generate_code`, and `shutdown_host` as standalone requests so a batch can
+  never leave a partially applied mutation or generation.
 - Keep the central tool at `D:\Tools\LGK-Vector`; remove project-local legacy
-  `gyx-vector` configs, scripts, and binaries instead of maintaining two tools.
+  bridge configs, scripts, and binaries instead of maintaining two tools.
 
 Supported functions are `inspect_ecuc_containers`, `find_module`,
 `find_module_template`, `get_param_definition`, `locate_container`,
@@ -175,14 +181,17 @@ Place `lgk-vector.json` in the exact DaVinci Cfg directory:
 
 ```json
 {
-  "project_path": "D:\\Work\\Project\\Cfg",
   "tool_path": "D:\\Vector\\SIP"
 }
 ```
 
-If discovery is ambiguous, also set absolute `project_file` and
-`davinci_command_path`. The legacy keys `LGK_project_path` and `LGK_tool_path`
-are accepted for existing projects, but new projects use the lowercase keys.
+The project path is derived from the directory containing the JSON. If
+discovery is ambiguous, also set `project_file` (relative to that directory is
+preferred) and `davinci_command_path` (relative to `tool_path` or absolute).
+Use `scripts/Initialize-LGKVectorProject.ps1` for a new project and require its
+static doctor result before editing. Doctor resolves paths and request shape
+but does not launch DaVinci or prove that generation succeeds. The legacy keys `LGK_project_path` and
+`LGK_tool_path` remain accepted for existing projects.
 
 ## Maintaining LGK-Vector itself
 

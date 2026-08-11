@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use xmltree::{Element, XMLNode};
 
-use crate::vector::search::{child, child_text, first_descendant_text, is_definition};
+use crate::vector::search::{child, child_text, is_definition};
 use crate::vector::template_index::TemplateIndex;
 
 // 暴露给 JSON 调用方的一个 ECUC 定义：容器、参数或引用。
@@ -75,7 +75,7 @@ fn collect_definitions(
                 value_tag: value_tag(&element.name).to_string(),
                 dest: element.name.clone(),
                 range: range(element),
-                ref_target: first_descendant_text(
+                ref_target: first_metadata_text(
                     element,
                     &[
                         "DESTINATION-TYPE",
@@ -95,7 +95,7 @@ fn collect_definitions(
 }
 
 fn definition_group(element: &Element) -> String {
-    if element.name == "ECUC-PARAM-CONF-CONTAINER-DEF" {
+    if is_container_definition(&element.name) {
         "containers"
     } else if element.name.ends_with("-REFERENCE-DEF") {
         "references"
@@ -107,7 +107,7 @@ fn definition_group(element: &Element) -> String {
 
 fn value_tag(dest: &str) -> &'static str {
     // 返回编辑 ECUC 时应创建/查找的值节点类型，而不是 C 语言类型。
-    if dest == "ECUC-PARAM-CONF-CONTAINER-DEF" {
+    if is_container_definition(dest) {
         "ECUC-CONTAINER-VALUE"
     } else if dest.ends_with("-REFERENCE-DEF") {
         "ECUC-REFERENCE-VALUE"
@@ -116,6 +116,13 @@ fn value_tag(dest: &str) -> &'static str {
     } else {
         "ECUC-TEXTUAL-PARAM-VALUE"
     }
+}
+
+fn is_container_definition(dest: &str) -> bool {
+    matches!(
+        dest,
+        "ECUC-PARAM-CONF-CONTAINER-DEF" | "ECUC-CHOICE-CONTAINER-DEF"
+    )
 }
 
 fn description(element: &Element) -> String {
@@ -155,9 +162,34 @@ fn range(element: &Element) -> Value {
         ("upper_multiplicity", "UPPER-MULTIPLICITY"),
         ("upper_multiplicity_infinite", "UPPER-MULTIPLICITY-INFINITE"),
     ] {
-        if let Some(value) = first_descendant_text(element, &[xml_name]) {
+        if let Some(value) = first_metadata_text(element, &[xml_name]) {
             values.insert(json_name, value);
         }
     }
     json!(values)
+}
+
+fn first_metadata_text(element: &Element, names: &[&str]) -> Option<String> {
+    for node in &element.children {
+        let XMLNode::Element(child_element) = node else {
+            continue;
+        };
+        if names.iter().any(|name| child_element.name == *name) {
+            if let Some(value) = child_element
+                .get_text()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+            {
+                return Some(value);
+            }
+        }
+        // Metadata may be wrapped, but a nested ECUC definition belongs to a
+        // child container/parameter and must never leak into its parent.
+        if !is_definition(child_element) {
+            if let Some(value) = first_metadata_text(child_element, names) {
+                return Some(value);
+            }
+        }
+    }
+    None
 }

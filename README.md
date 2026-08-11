@@ -12,16 +12,25 @@ This repository is MIT-licensed. It is an independent community implementation a
 
 ## Build
 
-Install a current Rust toolchain, then run:
+Install a current stable Rust toolchain, then run the same checks as CI:
 
 ```powershell
-cargo test --all-targets
-cargo build --release
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --all-targets --locked
+cargo build --release --locked
+& .\tests\open-source\Invoke-DependencyLicenseGuard.ps1
+& .\tests\open-source\Invoke-OpenSourceGuard.ps1 -IncludeHistory
+& .\tests\open-source\Invoke-PackageManifestSmoke.ps1
+& .\tests\onboarding\Invoke-OnboardingSmoke.ps1
 ```
 
-The release binaries are `lgk-vector` and `lgk-vector-host`. On Windows, keep both `.exe` files in the same directory.
+The release binaries are `lgk-vector` and `lgk-vector-host`. On Windows, keep both `.exe` files in the same directory. Their `--version` output includes the semantic version, Host protocol, and source build ID; the wrapper refuses a partially rebuilt or stale pair even when both still say `0.3.0`.
+End users of a GitHub Release do not need Rust; Rust is required only when building or contributing from source.
 
 ## Shared Windows installation
+
+For the shortest end-user path, download the `windows-x64.zip` asset from a GitHub Release and extract it to one shared directory such as `D:\Tools\LGK-Vector`. The archive contains a matching CLI/Host pair, scripts, source, tests, and documentation; using that package does not require Rust.
 
 Keep one writable source tree for all projects, normally `D:\Tools\LGK-Vector`. Do not copy the tool into every AUTOSAR repository. Build it once, then install the Codex Skill as a directory junction to the same source:
 
@@ -29,7 +38,7 @@ Keep one writable source tree for all projects, normally `D:\Tools\LGK-Vector`. 
 & "D:\Tools\LGK-Vector\scripts\Install-LGKVectorSkill.ps1"
 ```
 
-The default junction is `C:\Users\<user>\.codex\skills\lgk-vector`. Every Codex task then sees the D-drive `SKILL.md`, Rust source, tests, scripts, and Git history through that link. Each AUTOSAR project keeps only its own `lgk-vector.json` in the DaVinci Cfg directory and calls the central wrapper:
+The default junction is `C:\Users\<user>\.codex\skills\lgk-vector`. Every Codex task then sees the D-drive `SKILL.md`, Rust source, tests, scripts, and documentation through that link. A cloned maintenance repository also has Git history; the downloadable Release ZIP deliberately does not contain `.git`. After that one-time installation, each AUTOSAR project keeps only its own `lgk-vector.json` in the DaVinci Cfg directory and calls the central wrapper:
 
 ```powershell
 & "D:\Tools\LGK-Vector\scripts\Invoke-LGKVector.ps1" `
@@ -37,15 +46,22 @@ The default junction is `C:\Users\<user>\.codex\skills\lgk-vector`. Every Codex 
   -Request '{"func":"find_module","module":"Com"}'
 ```
 
-Before the first GitHub push, set the `repository` field in `Cargo.toml` to the real repository URL.
+Before the first GitHub push, set the `repository` field in `Cargo.toml` to the real repository URL. Publish an audited clean-root branch: the private development history may contain personal author metadata or superseded product names even when the current tree is clean.
 
 ## Project configuration
 
-Create `lgk-vector.json` in the DaVinci Cfg directory:
+The safest first-time setup is one command. It creates a portable `lgk-vector.json` and immediately runs the non-mutating static doctor:
+
+```powershell
+& "D:\Tools\LGK-Vector\scripts\Initialize-LGKVectorProject.ps1" `
+  -ProjectPath "D:\Work\Project\Cfg" `
+  -ToolPath "D:\VectorSIP"
+```
+
+The minimal generated JSON contains only the machine-specific tool location. `project_path` is derived from the directory containing the JSON:
 
 ```json
 {
-  "project_path": "D:\\Work\\Project\\Cfg",
   "tool_path": "D:\\VectorSIP"
 }
 ```
@@ -54,14 +70,15 @@ If the directory contains several `.dpa` files, or the DaVinci installation cont
 
 ```json
 {
-  "project_path": "D:\\Work\\Project\\Cfg",
   "tool_path": "D:\\VectorSIP",
-  "project_file": "D:\\Work\\Project\\Cfg\\VehiclePlatform.dpa",
+  "project_file": "VehiclePlatform.dpa",
   "davinci_command_path": "D:\\Vector\\DaVinci\\Exec\\DVCfgCmd.exe"
 }
 ```
 
-The optional `project_file` must be a `.dpa` file inside `project_path`. The optional `davinci_command_path` must point directly to `DVCfgCmd.exe`. Without these fields, the original automatic discovery behavior remains unchanged.
+The optional `project_file` must be a `.dpa` inside the Cfg directory and may be relative to it. A relative `davinci_command_path` is resolved from `tool_path`; an absolute path may point at a separate DaVinci installation. Without these fields, automatic discovery succeeds only when exactly one candidate exists.
+
+Doctor verifies JSON, request shape, DPA/ECUC/BSWMD discovery, executable paths, and CLI/Host versions. It deliberately does not launch DaVinci, so `valid=true` is not proof that a licensed DaVinci session or generation can complete. Use a disposable licensed project for that final integration check.
 
 Run the executable from that Cfg directory and pass one JSON request:
 
@@ -76,13 +93,17 @@ Supported functions are `inspect_ecuc_containers`, `find_module`, `find_module_t
 
 `inspect_ecuc_containers` reads saved ECUC ARXML locally and does not start DaVinci. It can therefore inspect a project while the GUI holds the `.dpa` lock. Multiple inspection requests in one array return one flat result array; do not mix inspection requests with other functions in the same batch.
 
-`edit_file` refuses files outside `project_path`. `auto_solve_errors` requires `confirmed: true`. Always send `shutdown_host` after the final request.
+Multi-item request arrays are read-only. Send `edit_file`, `auto_solve_errors`, `generate_code`, and `shutdown_host` as standalone requests so a later failure cannot leave an earlier mutation half-applied.
+
+Before `edit_file`, save and close the same project in the DaVinci GUI so its in-memory model cannot overwrite the external ARXML change. `edit_file` refuses files outside `project_path` and requires exact current text in an `expected` object before it will write. `generate_code` never defaults to a full build: pass a concrete module, or explicitly pass `"module":"all"`. `auto_solve_errors` requires an explicit module plus `confirmed: true`. Always send `shutdown_host` after the final request.
+
+The public suite verifies the synthetic local path and failure handling. A real DaVinci generation still requires a lawful matching DaVinci/SIP installation and a disposable licensed test project; passing the public suite is strong evidence, not a claim that no defect can exist on every proprietary tool version.
 
 ## Contribution rules
 
 - Do not contribute proprietary binaries, decompiled output, extracted scripts, credentials, licenses, customer configurations, or generated customer code.
 - Implement against public documentation and locally licensed tools only.
-- Add focused tests for new local operations and run `cargo test --all-targets` before opening a pull request.
+- Add focused tests and run the complete locked public suite before opening a pull request.
 - Keep DaVinci automation changes small and document the supported DaVinci version used for validation.
 
 ## Help and release policy
