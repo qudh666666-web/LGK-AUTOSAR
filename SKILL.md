@@ -157,6 +157,17 @@ Supported functions are `inspect_ecuc_containers`, `find_module`,
 `update_project`, `import_dbc`, and `shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
 accepted.
 
+`find_module_template` is compact by default: it returns container hierarchy
+and direct parameter/reference names, not every description and range. Query
+the few required names with `get_param_definition`. Use `details:true` only for
+explicit maintainer diagnosis. The resident Host caches the parsed template and
+invalidates it when the source ARXML changes.
+
+The executable accepts an omitted `generate_code.module` as legacy
+`module:"all"` compatibility. Do not rely on that default in agent work: name
+the affected module, or write `module:"all"` when full generation is genuinely
+requested.
+
 Use `update_project` to run the DPA's registered Project Update inputs. Use
 `import_dbc` with an absolute `source` and a project-relative `registered_path`
 when replacing a DBC already registered by the DPA. Both are standalone,

@@ -118,7 +118,10 @@ impl CommandDispatcher {
                 validate_davinci_dependencies(config)?;
             }
             "generate_code" => {
-                let module = ops::required_module(request)?;
+                // Compatibility with the established bridge: an omitted
+                // module explicitly means full generation.  The Skill still
+                // sends a concrete affected module for the normal fast path.
+                let module = optional_module(request)?;
                 if !module.eq_ignore_ascii_case("all") {
                     let modules = ModuleIndex::load(config)?;
                     let module_info = modules.find(module)?;
@@ -176,9 +179,9 @@ impl CommandDispatcher {
                 Ok(json!({"module": module, "message": message}))
             }
             "generate_code" => {
-                // Full generation is intentionally never an implicit default. Callers
-                // must pass a concrete module or explicitly opt into module="all".
-                let module = ops::required_module(request)?;
+                // The protocol keeps the established omitted-module => all
+                // behavior. Normal Skill calls still name the affected module.
+                let module = optional_module(request)?;
                 // 单模块生成的关键：从当前工程读取真实定义路径，
                 // 而不是把 /MICROSAR/<module> 或某个芯片/SIP 写死。
                 let definition_ref = if module.eq_ignore_ascii_case("all") {

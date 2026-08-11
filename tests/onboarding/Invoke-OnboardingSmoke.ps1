@@ -12,7 +12,7 @@ $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $wrapper = Join-Path $repository 'scripts\Invoke-LGKVector.ps1'
 $initializer = Join-Path $repository 'scripts\Initialize-LGKVectorProject.ps1'
 $executable = (Resolve-Path -LiteralPath $ExecutablePath).Path
-$temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lgk-vector-onboarding-" + [Guid]::NewGuid().ToString('N'))
+$temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lgk-vector-onboarding-中文 空格-" + [Guid]::NewGuid().ToString('N'))
 $project = Join-Path $temporaryRoot 'Cfg'
 $tool = Join-Path $temporaryRoot 'SIP'
 $hostStarted = $false
@@ -132,6 +132,9 @@ try {
     $configPath = Join-Path $project 'lgk-vector.json'
     $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ($config.PSObject.Properties.Name -notcontains 'project_path') 'portable config must derive project_path from its own directory'
+    $configText = [System.IO.File]::ReadAllText($configPath, [System.Text.Encoding]::UTF8)
+    $configBom = [System.Text.UTF8Encoding]::new($true)
+    [System.IO.File]::WriteAllBytes($configPath, $configBom.GetPreamble() + $configBom.GetBytes($configText))
 
     # A new user commonly calls the initializer from a parent directory and
     # supplies relative names.  They must be anchored to ProjectPath/ToolPath,
@@ -156,11 +159,16 @@ try {
 
     $localWatch = [Diagnostics.Stopwatch]::StartNew()
     $hostStarted = $true
-    $moduleOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"find_module","module":"Com"}')
+    $moduleOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"find_module","module":"Com","note":"中文路径与 UTF-8"}')
     $localWatch.Stop()
     $module = (($moduleOutput | Out-String) | ConvertFrom-Json)
     Assert-True ($module.definition_ref -eq '/PublicStack/Com') 'find_module must return the fixture definition ref'
     Assert-True ($localWatch.Elapsed.TotalSeconds -lt 5) 'first local request must complete in under 5 seconds'
+
+    $templateOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"find_module_template","module":"Com"}')
+    $template = (($templateOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($template.PSObject.Properties.Name -notcontains 'definitions') 'default template lookup must stay compact'
+    Assert-True ($template.containers[0].name -eq 'ComConfig') 'compact template must preserve container hierarchy'
 
     $inspectOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"inspect_ecuc_containers","module":"Com","container":"ComSignal","params":["ComBitPosition"]}')
     $inspect = (($inspectOutput | Out-String) | ConvertFrom-Json)

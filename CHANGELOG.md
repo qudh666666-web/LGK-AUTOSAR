@@ -2,6 +2,16 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## Unreleased - 2026-08-12
+
+- 对齐既有 Vector 自动化入口的 Windows 行为：包装器固定使用 UTF-8 输入、输出和无 BOM 请求编码，中文、空格路径加入端到端回归；
+- 修复 Windows `connect_timeout` 后套接字偶发保留非阻塞状态，导致 Host 探测把 `10035/WouldBlock` 误报为端口冲突的问题；
+- `find_module_template` 默认改为轻量容器树，只返回容器层级及参数/引用名称；完整描述、范围和目标仅在 `details:true` 时返回，日常精确查询继续使用 `get_param_definition`；
+- 为 SIP 模板建立按工具路径和真实 definition ref 索引的 resident 缓存，并用文件长度和修改时间失效，避免每次查询重复扫描整个 SIP；
+- 保留旧调用兼容性：`generate_code` 省略 `module` 时等价于 `module:"all"`；Skill 的日常流程仍必须显式指定受影响模块，避免无意全量生成；
+- 真实 TC275 SIP 对比：`find_module_template(CanIf)` 输出由 125895 字符降至 8574 字符；LGK 冷启动 2.55 秒、常驻 0.17–0.18 秒，对照入口冷启动 3.28 秒、常驻 0.55–0.56 秒；单模块 `CanIf` 生成两者均约 23 秒；
+- 验证：27 个 Rust 测试通过；含中文/空格目录、配置 BOM、请求 BOM、发布包和 Host 生命周期的 38 项 onboarding 连续运行 3 次全部通过；真实测试结束后 Host 正常关闭、端口释放。
+
 ## v0.3.0 - 2026-08-11
 
 Target release tag: `v0.3.0` (not published yet)

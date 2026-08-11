@@ -12,6 +12,9 @@ fn fixture() -> (tempfile::TempDir, SessionConfig) {
     let tool = root.path().join("SIP");
     fs::create_dir_all(project.join("Config/ECUC")).expect("project dirs");
     fs::create_dir_all(tool.join("BSWMD/Com")).expect("tool dirs");
+    fs::create_dir_all(tool.join("DaVinciConfigurator/Core")).expect("DaVinci dirs");
+    fs::write(tool.join("DaVinciConfigurator/Core/DVCfgCmd.exe"), b"")
+        .expect("DaVinci command placeholder");
     fs::write(
         project.join("Test.dpa"),
         r#"<?xml version="1.0"?>
@@ -150,7 +153,10 @@ fn finds_module_and_definition() {
         "ECUC-NUMERICAL-PARAM-VALUE"
     );
 
-    let template = ops::find_module_template::execute(&config, &json!({"module": "Com"}))
+    let template = ops::find_module_template::execute(
+        &config,
+        &json!({"module": "Com", "details": true}),
+    )
         .expect("find module template");
     let definitions = template["definitions"].as_array().expect("definitions");
     let container = definitions
@@ -179,6 +185,45 @@ fn finds_module_and_definition() {
         choice_child["definition_ref"],
         "/MICROSAR/Com/ComConfig/ComGwDestination/ComGwSignal"
     );
+
+    let compact = ops::find_module_template::execute(&config, &json!({"module": "Com"}))
+        .expect("compact module template");
+    assert!(compact.get("definitions").is_none());
+    assert_eq!(compact["containers"][0]["name"], "ComConfig");
+    assert_eq!(
+        compact["containers"][0]["subcontainers"][0]["name"],
+        "ComGwDestination"
+    );
+    assert_eq!(
+        compact["containers"][0]["subcontainers"][1]["name"],
+        "ComSignal"
+    );
+}
+
+#[test]
+fn template_cache_invalidates_when_the_definition_file_changes() {
+    let (_root, config) = fixture();
+    ops::get_param_definition::execute(
+        &config,
+        &json!({"module": "Com", "params": "ComBitPosition"}),
+    )
+    .expect("prime template cache");
+
+    let template_path = config.tool_path.join("BSWMD/Com/Com_bswmd.arxml");
+    let raw = fs::read_to_string(&template_path).expect("read template");
+    let updated = raw.replacen(
+        "</PARAMETERS>",
+        "<ECUC-INTEGER-PARAM-DEF><SHORT-NAME>ComAddedAfterCache</SHORT-NAME><MAX>9</MAX></ECUC-INTEGER-PARAM-DEF></PARAMETERS>",
+        1,
+    );
+    fs::write(&template_path, updated).expect("update template");
+
+    let definition = ops::get_param_definition::execute(
+        &config,
+        &json!({"module": "Com", "params": "ComAddedAfterCache"}),
+    )
+    .expect("reload changed template");
+    assert_eq!(definition["definitions"][0]["range"]["max"], "9");
 }
 
 #[test]
@@ -308,10 +353,8 @@ fn doctor_rejects_missing_required_fields_before_starting_davinci() {
 
     let implicit_full_generation =
         CommandDispatcher::validate_batch(&config, r#"{"func":"generate_code"}"#)
-            .expect_err("implicit full generation must fail");
-    assert!(implicit_full_generation
-        .to_string()
-        .contains("module is required"));
+            .expect("omitted generation module must keep legacy module=all behavior");
+    assert_eq!(implicit_full_generation, vec!["generate_code"]);
 
     let mixed_inspection = CommandDispatcher::validate_batch(
         &config,

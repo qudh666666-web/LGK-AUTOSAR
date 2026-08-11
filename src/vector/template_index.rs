@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 
 use anyhow::{bail, Context, Result};
 use walkdir::WalkDir;
@@ -11,12 +14,27 @@ use crate::vector::module_index::ModuleIndex;
 use crate::vector::search::{child_text, descendants};
 
 // 当前模块在 SIP 中的模板文件及其已解析 XML 树。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TemplateIndex {
     pub module: String,
     pub definition_ref: String,
     pub path: PathBuf,
     pub root: Element,
+}
+
+#[derive(Debug, Clone)]
+struct CachedTemplate {
+    path: PathBuf,
+    length: u64,
+    modified: Option<SystemTime>,
+    root: Element,
+}
+
+type TemplateCacheKey = (PathBuf, String);
+
+fn template_cache() -> &'static Mutex<HashMap<TemplateCacheKey, CachedTemplate>> {
+    static CACHE: OnceLock<Mutex<HashMap<TemplateCacheKey, CachedTemplate>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 impl TemplateIndex {
@@ -30,6 +48,16 @@ impl TemplateIndex {
             .rsplit('/')
             .find(|part| !part.is_empty())
             .ok_or_else(|| anyhow::anyhow!("invalid module definition ref: {definition_ref}"))?;
+
+        let cache_key = (config.tool_path.clone(), definition_ref.clone());
+        if let Some(cached) = cached_template(&cache_key) {
+            return Ok(Self {
+                module: module.to_string(),
+                definition_ref,
+                path: cached.path,
+                root: cached.root,
+            });
+        }
 
         // SIP 的布局因版本和供应商而异，因此扫描 tool_path，
         // 再用完整 definition_ref 精确确认，而不是依赖固定目录名。
@@ -70,6 +98,7 @@ impl TemplateIndex {
             0 => bail!("no template arxml found for module definition: {definition_ref}"),
             1 => {
                 let (path, root) = candidates.pop().expect("length checked");
+                cache_template(cache_key, &path, &root);
                 Ok(Self {
                     module: module.to_string(),
                     definition_ref,
@@ -106,6 +135,34 @@ impl TemplateIndex {
                     self.path.display()
                 )
             })
+    }
+}
+
+fn cached_template(key: &TemplateCacheKey) -> Option<CachedTemplate> {
+    let cached = template_cache().lock().ok()?.get(key).cloned()?;
+    let metadata = fs::metadata(&cached.path).ok()?;
+    if metadata.len() == cached.length && metadata.modified().ok() == cached.modified {
+        Some(cached)
+    } else {
+        if let Ok(mut cache) = template_cache().lock() {
+            cache.remove(key);
+        }
+        None
+    }
+}
+
+fn cache_template(key: TemplateCacheKey, path: &Path, root: &Element) {
+    let Ok(metadata) = fs::metadata(path) else {
+        return;
+    };
+    let cached = CachedTemplate {
+        path: path.to_path_buf(),
+        length: metadata.len(),
+        modified: metadata.modified().ok(),
+        root: root.clone(),
+    };
+    if let Ok(mut cache) = template_cache().lock() {
+        cache.insert(key, cached);
     }
 }
 

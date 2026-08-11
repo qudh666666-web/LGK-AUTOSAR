@@ -25,6 +25,16 @@ param(
     [switch]$ValidateOnly
 )
 
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# Match the stable Windows behavior of the established Vector bridge: JSON,
+# Chinese paths, DaVinci diagnostics and redirected output all use UTF-8.
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = $utf8NoBom
+[Console]::OutputEncoding = $utf8NoBom
+$OutputEncoding = $utf8NoBom
+
 # 先把用户输入统一成绝对路径，后续 Rust 端也会再次校验。
 $project = (Resolve-Path -LiteralPath $ProjectPath -ErrorAction Stop).Path
 $executable = (Resolve-Path -LiteralPath $ExecutablePath -ErrorAction Stop).Path

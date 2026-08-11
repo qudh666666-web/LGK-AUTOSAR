@@ -230,6 +230,10 @@ fn send_host_request(request: HostRequest, timeout: Duration) -> Result<HostResp
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_HOST_PORT);
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(1))
         .with_context(|| format!("resident host is not running at {address}"))?;
+    // On Windows a socket created by connect_timeout can briefly retain its
+    // nonblocking state.  Force blocking I/O before the newline-framed JSON
+    // exchange so WSAEWOULDBLOCK (10035) is never misreported as a bad Host.
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(timeout))?;
     serde_json::to_writer(&mut stream, &request)?;
     writeln!(stream)?;
@@ -249,6 +253,7 @@ fn send_probe_request(request: HostRequest, timeout: Duration) -> Result<HostRes
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_HOST_PROBE_PORT);
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_millis(500))
         .with_context(|| format!("resident probe is not running at {address}"))?;
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(timeout))?;
     serde_json::to_writer(&mut stream, &request)?;
     writeln!(stream)?;
