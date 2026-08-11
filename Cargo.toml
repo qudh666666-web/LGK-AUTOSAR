@@ -5,6 +5,7 @@ edition = "2021"
 description = "Open-source local bridge for licensed Vector DaVinci ECUC projects"
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/qudh666666-web/LGK-Vector"
 keywords = ["autosar", "ecuc", "davinci", "vector"]
 categories = ["command-line-utilities", "development-tools"]
 

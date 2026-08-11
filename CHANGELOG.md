@@ -4,6 +4,7 @@
 
 ## Unreleased - 2026-08-12
 
+- 固定公开仓库地址为 `https://github.com/qudh666666-web/LGK-Vector`；发布时只推送经过审计的 clean-root 公共快照，不公开含个人邮箱和旧名称的私有开发历史；
 - 对齐既有 Vector 自动化入口的 Windows 行为：包装器固定使用 UTF-8 输入、输出和无 BOM 请求编码，中文、空格路径加入端到端回归；
 - 修复 Windows `connect_timeout` 后套接字偶发保留非阻塞状态，导致 Host 探测把 `10035/WouldBlock` 误报为端口冲突的问题；
 - `find_module_template` 默认改为轻量容器树，只返回容器层级及参数/引用名称；完整描述、范围和目标仅在 `details:true` 时返回，日常精确查询继续使用 `get_param_definition`；

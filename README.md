@@ -48,7 +48,7 @@ The default junction is `C:\Users\<user>\.codex\skills\lgk-vector`. Every Codex 
   -Request '{"func":"find_module","module":"Com"}'
 ```
 
-Before the first GitHub push, set the `repository` field in `Cargo.toml` to the real repository URL. Publish an audited clean-root branch: the private development history may contain personal author metadata or superseded product names even when the current tree is clean.
+The canonical public repository is [qudh666666-web/LGK-Vector](https://github.com/qudh666666-web/LGK-Vector). Public releases use an audited clean-root history: the private development history may contain personal author metadata or superseded product names even when the current tree is clean.
 
 ## Project configuration
 
