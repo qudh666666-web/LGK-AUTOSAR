@@ -9,6 +9,7 @@
 - `find_module_template` 默认改为轻量容器树，只返回容器层级及参数/引用名称；完整描述、范围和目标仅在 `details:true` 时返回，日常精确查询继续使用 `get_param_definition`；
 - 为 SIP 模板建立按工具路径和真实 definition ref 索引的 resident 缓存，并用文件长度和修改时间失效，避免每次查询重复扫描整个 SIP；
 - 保留旧调用兼容性：`generate_code` 省略 `module` 时等价于 `module:"all"`；Skill 的日常流程仍必须显式指定受影响模块，避免无意全量生成；
+- 发布包新增 `test` 目录和双击式 EXE 自检；没有 Rust/DaVinci 的电脑也能验证 CLI/Host 配对、中文路径、本地 ECUC 查询、模板缓存和正常关闭，自检明确不冒充专有 DaVinci 集成测试；
 - 真实 TC275 SIP 对比：`find_module_template(CanIf)` 输出由 125895 字符降至 8574 字符；LGK 冷启动 2.55 秒、常驻 0.17–0.18 秒，对照入口冷启动 3.28 秒、常驻 0.55–0.56 秒；单模块 `CanIf` 生成两者均约 23 秒；
 - 验证：27 个 Rust 测试通过；含中文/空格目录、配置 BOM、请求 BOM、发布包和 Host 生命周期的 38 项 onboarding 连续运行 3 次全部通过；真实测试结束后 Host 正常关闭、端口释放。
 

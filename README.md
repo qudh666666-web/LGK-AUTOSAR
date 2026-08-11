@@ -32,6 +32,8 @@ End users of a GitHub Release do not need Rust; Rust is required only when build
 
 For the shortest end-user path, download the `windows-x64.zip` asset from a GitHub Release and extract it to one shared directory such as `D:\Tools\LGK-Vector`. The archive contains a matching CLI/Host pair, scripts, source, tests, and documentation; using that package does not require Rust.
 
+On a computer without Rust or DaVinci, double-click `test\一键测试EXE.cmd` after extraction. The bundled synthetic self-test validates the two EXEs, Unicode paths, local ECUC inspection, template caching, and normal Host shutdown. It does not launch or imitate proprietary DaVinci; the target computer's lawful DaVinci/SIP installation is still required for generation and Project Update.
+
 Keep one writable source tree for all projects, normally `D:\Tools\LGK-Vector`. Do not copy the tool into every AUTOSAR repository. Build it once, then install the Codex Skill as a directory junction to the same source:
 
 ```powershell

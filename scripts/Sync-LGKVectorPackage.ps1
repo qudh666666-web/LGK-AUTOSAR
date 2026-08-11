@@ -49,7 +49,7 @@ $files = @(
     'SKILL.md'
     'agents\openai.yaml'
 )
-$directories = @('.github', 'assets', 'docs', 'scripts', 'src', 'tests')
+$directories = @('.github', 'assets', 'docs', 'scripts', 'src', 'test', 'tests')
 $approvedFiles = @($files | ForEach-Object { $_.Replace('\', '/') })
 
 $repositoryRootOutput = @(& git -C $source rev-parse --show-toplevel 2>&1)
