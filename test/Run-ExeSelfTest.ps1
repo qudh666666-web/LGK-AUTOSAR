@@ -1,8 +1,18 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [string]$PackageRoot = (Split-Path -Parent $PSScriptRoot)
+    [string]$PackageRoot
 )
+
+# $PSScriptRoot is empty in some legacy PowerShell launch paths.  The .cmd
+# entrypoint must still be able to locate the package it belongs to.
+if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
+    $scriptPath = $MyInvocation.MyCommand.Path
+    if ([string]::IsNullOrWhiteSpace($scriptPath)) {
+        throw 'Cannot determine the self-test script location; pass -PackageRoot explicitly.'
+    }
+    $PackageRoot = Split-Path -Parent (Split-Path -Parent $scriptPath)
+}
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
