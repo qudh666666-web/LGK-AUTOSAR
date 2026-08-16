@@ -2,7 +2,25 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
-## Unreleased - 2026-08-15
+## v0.3.6 - 2026-08-16
+
+- Core: add the generic read-only `verify_delivery` request. It checks actual
+  compiled files against generated sources with exact byte comparison, enforces
+  required/forbidden text assertions, and fails closed by default when a file
+  is missing, stale, or invalid. Implementation commit: `438fef9`.
+- Safety: require one declared absolute project root that contains the configured
+  DaVinci Cfg directory; accept only root-relative file paths, reject `..`, drive
+  prefixes, and link escapes, limit checks/patterns/file size, and never return
+  inspected file contents.
+- Validation: 31 Rust tests passed; the onboarding suite passed 48 assertions;
+  the packaged EXE suite passed 11 assertions; public-content, 13-item package,
+  and 34-dependency license guards passed. A real TC275 read-only request proved
+  both `Can_Lcfg.c` and `Port_PBCfg.c` synchronized into the compile project and
+  confirmed the required CAN0 symbols, then `shutdown_host` released the Host.
+- Build: release CLI and Host both report `0.3.6`, protocol 2, and were rebuilt
+  with the project-private offline GNU toolchain. The private toolchain lacks
+  the optional `rustfmt` component, so format validation was manual; compilation
+  and all executable tests passed. No public tag or GitHub release was created.
 
 - Skill: add a detailed, low-freedom five-minute runbook for the proven TC275
   CAN1-to-CAN0/TJA1040 conversion. It separates DaVinci `Can` ECUC edits from
