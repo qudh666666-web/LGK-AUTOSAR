@@ -117,6 +117,16 @@ Before generating or committing a CAN1-to-CAN0 change, record the target
 physical transceiver part/pins from the schematic. Do not change the displayed
 node name alone.
 
+Treat the physical node and RX input multiplexer as independent settings. Never
+derive `CanIOPort`/RXSEL from `Node0` or `Node1`; select the value documented for
+the actual RX pin. For the TC275 CAN0 path on P20.7/P20.8, verify all of these
+together: `Node0`, base `0xF0018200`, P20.7 `RXDCAN0B` with RXSEL/`CanIOPort`
+`b_001`, and P20.8 push-pull alternate output 5 (`TXDCAN0`). If the TJA1040 uses
+P20.6 as active-low NEN/STB, configure P20.6 as GPIO push-pull output with a low
+initial level. Inspect the generated `Can_InitPortSel` and `Port_PBCfg.c`; a
+correct controller with GPIO-input TX or input-mode transceiver enable produces
+a silent physical bus even when generation, compilation, and flashing succeed.
+
 After a transceiver BSWMD replacement, run one `update_project`, then inspect
 the refreshed `CanTrcv` and `Rte` containers. Project Update can recreate the
 target BSW Internal Behavior and an RTE event mapping while leaving its OS task,

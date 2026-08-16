@@ -4,6 +4,16 @@
 
 ## Unreleased - 2026-08-15
 
+- Skill: make the physical pin mux and receive selector mandatory in a CAN0
+  handoff. It now forbids deriving RXSEL/`CanIOPort` from the node number and
+  records the proven TC275 CAN0 mapping: Node0/base `0xF0018200`, P20.7
+  `RXDCAN0B` with `b_001`, P20.8 `TXDCAN0` on push-pull ALT5, and active-low
+  TJA1040 NEN/STB on P20.6 as GPIO output low.
+- Validation: the compiled `Port_PBCfg.c` had P20.6 and P20.8 as GPIO inputs and
+  `Can_InitPortSel` was 0, which produced a completely silent bus despite a
+  successful build. Targeted Port and Can generation produced P20.6 output,
+  P20.8 ALT5, and `Can_InitPortSel=1`; both generators reported zero errors.
+
 - Skill: add a non-bypassable CAN0 commit/build gate after an incomplete CAN0
   handoff. It requires successful Can/CanTrcv/CanIf/Os/vLinkGen/Rte generation
   evidence plus one serialized incremental build and fresh ELF/HEX/MAP
