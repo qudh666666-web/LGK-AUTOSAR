@@ -145,6 +145,30 @@ Run an incremental compile/link before handoff. If the make rules omit header
 dependencies, remove only the stale, regenerable target driver object and
 rebuild; never patch the driver source or generated callback macro by hand.
 
+### CAN replacement commit and build gate
+
+For a CAN1-to-CAN0 replacement, do **not** synchronize generated output, commit,
+or report completion until one checklist record proves all of the following:
+
+1. The affected modules have been generated: `Can`, `CanTrcv`, `CanIf`, `Os`,
+   `vLinkGen`, and `Rte`.
+2. Each latest DaVinci generation report has zero errors and marks its requested
+   module as successful.
+3. The compiled GenData is consistent: `Can_Lcfg.c` uses `Node0` and `CanIsr_0`,
+   the target `CanIf` callback is present, and the target transceiver main
+   function is scheduled.
+4. One serialized incremental build has exited successfully; afterwards, the
+   generated ELF/HEX/MAP files have fresh timestamps and the MAP contains no
+   stale CAN1 or old-transceiver symbols.
+
+If any check fails, do not commit a partial implementation. Fix the corresponding
+ECUC integration module, then regenerate only that module and repeat the exact
+build validation.
+
+When launching a build outside the IDE, capture and wait for the owned
+`amk`/`ctc`/`cctc` process tree to exit. Never start another build while one is
+still active, and never infer success from partial console output.
+
 ### Zero-traffic acceptance gate
 
 Never declare a CAN switch fixed merely because ECUC generation or a Tasking

@@ -4,6 +4,18 @@
 
 ## Unreleased - 2026-08-15
 
+- Skill: add a non-bypassable CAN0 commit/build gate after an incomplete CAN0
+  handoff. It requires successful Can/CanTrcv/CanIf/Os/vLinkGen/Rte generation
+  evidence plus one serialized incremental build and fresh ELF/HEX/MAP
+  verification before synchronization, commit, or completion reporting. It
+  explicitly forbids concurrent/restarted builds and interpreting partial build
+  output as success.
+- Validation: the real TC275 sequence initially exposed a missing `CanIsr_0`
+  definition and a stale TJA1040 CanIf callback after premature handoff. After
+  correcting the Os/vLinkGen/CanIf generation and synchronization, a single
+  rebuild produced fresh ELF/HEX/MAP files with `CanIsr_0` and TJA1040 symbols
+  and without `CanIsr_1` or TJA1043 symbols.
+
 - Skill: add the required OS/vLinkGen and CanIf portions of a controller or
   transceiver replacement. The handoff now proves the ISR name is consistently
   generated in Can and Os, distinguishes `CanSRC` from the derivative-specific
