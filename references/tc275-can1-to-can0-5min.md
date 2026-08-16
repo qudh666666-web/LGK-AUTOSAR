@@ -205,13 +205,34 @@ formatting and ordering must not be manually “cleaned up.”
 
 ## Generated-code acceptance checks
 
-Run targeted searches in the **compiled destinations**, not merely in the
+Run the LGK delivery gate against the **compiled destinations**, not merely the
 generator output folder:
 
 ```powershell
-rg -n 'Can_InitPortSel|CanIsr_0|F0018200' Proj_Code/_01_BSW/Gen/GenData/Can_Lcfg.c
-rg -n 'Port20|Pin6|Pin7|Pin8|ALT5|PUSHPULL|GPIO' Proj_Code/_03_MCAL/Gen/src/Port_PBCfg.c
+$request = @{
+  func = 'verify_delivery'
+  root = 'D:\Project\AutosarSpace\Tc275-V1.3'
+  checks = @(
+    @{
+      path = 'Proj_Code\_01_BSW\Gen\GenData\Can_Lcfg.c'
+      same_as = 'Proj_Config\Bsw_Config\Gen\GenData\Can_Lcfg.c'
+      must_contain = @('CanIsr_0', '0xF0018200u')
+      must_not_contain = @('CanIsr_1')
+    },
+    @{
+      path = 'Proj_Code\_03_MCAL\Gen\src\Port_PBCfg.c'
+      same_as = 'Proj_Config\Mcal_Config\Gen\src\Port_PBCfg.c'
+    }
+  )
+} | ConvertTo-Json -Compress -Depth 6
+& 'C:\Users\l\.codex\skills\lgk-vector\scripts\Invoke-LGKVector.ps1' `
+  -ProjectPath 'D:\Project\AutosarSpace\Tc275-V1.3\Proj_Config\Bsw_Config\Cfg' `
+  -Request $request
 ```
+
+Require `passed:true`, then inspect the Port20 block for the three adjacent pin
+rows below. Exact file synchronization alone cannot prove that a chosen pin
+mode is electrically correct.
 
 Accept the change only when all of these are true:
 

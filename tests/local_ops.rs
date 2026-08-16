@@ -342,6 +342,100 @@ fn aggregates_multiple_inspection_requests_into_one_result_array() {
 }
 
 #[test]
+fn verifies_synchronized_delivery_and_required_generated_values() {
+    let (root, config) = fixture();
+    let generated = root.path().join("Generated/Can_Lcfg.c");
+    let compiled = root.path().join("Proj_Code/Can_Lcfg.c");
+    fs::create_dir_all(generated.parent().expect("generated parent")).expect("generated dir");
+    fs::create_dir_all(compiled.parent().expect("compiled parent")).expect("compiled dir");
+    let content = "Can_InitPortSel[0] = 1u;\nCanIsr_0();\n0xF0018200u\n";
+    fs::write(&generated, content).expect("generated file");
+    fs::write(&compiled, content).expect("compiled file");
+
+    let result = ops::verify_delivery::execute(
+        &config,
+        &json!({
+            "root": root.path(),
+            "checks": [{
+                "path": "Proj_Code/Can_Lcfg.c",
+                "same_as": "Generated/Can_Lcfg.c",
+                "must_contain": ["Can_InitPortSel[0] = 1u", "CanIsr_0", "0xF0018200u"],
+                "must_not_contain": ["CanIsr_1"]
+            }]
+        }),
+    )
+    .expect("verified delivery");
+
+    assert_eq!(result["passed"], true);
+    assert_eq!(result["checks"][0]["synchronized"], true);
+    assert_eq!(result["checks"][0]["missing_required"], json!([]));
+    assert_eq!(result["checks"][0]["forbidden_found"], json!([]));
+}
+
+#[test]
+fn reports_and_enforces_unsynchronized_or_invalid_delivery() {
+    let (root, config) = fixture();
+    let generated = root.path().join("Generated/Can_Lcfg.c");
+    let compiled = root.path().join("Proj_Code/Can_Lcfg.c");
+    fs::create_dir_all(generated.parent().expect("generated parent")).expect("generated dir");
+    fs::create_dir_all(compiled.parent().expect("compiled parent")).expect("compiled dir");
+    fs::write(&generated, "Can_InitPortSel[0] = 1u;\nCanIsr_0();\n").expect("generated file");
+    fs::write(&compiled, "Can_InitPortSel[0] = 0u;\nCanIsr_1();\n").expect("compiled file");
+    let request = json!({
+        "root": root.path(),
+        "checks": [{
+            "path": "Proj_Code/Can_Lcfg.c",
+            "same_as": "Generated/Can_Lcfg.c",
+            "must_contain": ["Can_InitPortSel[0] = 1u", "CanIsr_0"],
+            "must_not_contain": ["CanIsr_1"]
+        }]
+    });
+
+    let error = ops::verify_delivery::execute(&config, &request)
+        .expect_err("default enforcement must reject stale compiled output");
+    assert!(error.to_string().contains("delivery verification failed"));
+
+    let mut diagnostic = request;
+    diagnostic["enforce"] = json!(false);
+    let result = ops::verify_delivery::execute(&config, &diagnostic)
+        .expect("diagnostic result must remain inspectable");
+    assert_eq!(result["passed"], false);
+    assert_eq!(result["checks"][0]["synchronized"], false);
+    assert_eq!(
+        result["checks"][0]["missing_required"],
+        json!(["Can_InitPortSel[0] = 1u", "CanIsr_0"])
+    );
+    assert_eq!(result["checks"][0]["forbidden_found"], json!(["CanIsr_1"]));
+}
+
+#[test]
+fn confines_delivery_verification_to_the_declared_project_root() {
+    let (root, config) = fixture();
+    let wrong_root = config.tool_path.clone();
+    let wrong_root_error = ops::verify_delivery::execute(
+        &config,
+        &json!({
+            "root": wrong_root,
+            "checks": [{"path": "BSWMD/Com/Com_bswmd.arxml"}]
+        }),
+    )
+    .expect_err("verification root must contain the configured project");
+    assert!(wrong_root_error
+        .to_string()
+        .contains("must contain the configured DaVinci project"));
+
+    let traversal_error = ops::verify_delivery::execute(
+        &config,
+        &json!({
+            "root": root.path(),
+            "checks": [{"path": "../outside.txt"}]
+        }),
+    )
+    .expect_err("relative path traversal must be rejected");
+    assert!(traversal_error.to_string().contains("cannot contain parent"));
+}
+
+#[test]
 fn doctor_rejects_missing_required_fields_before_starting_davinci() {
     let (_root, config) = fixture();
     let missing_query_module =

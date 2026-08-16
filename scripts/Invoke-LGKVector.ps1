@@ -133,6 +133,7 @@ try {
         'get_param_definition',
         'get_bsw_param_definition',
         'locate_container',
+        'verify_delivery',
         'edit_file',
         'get_errors_list',
         'auto_solve_errors',

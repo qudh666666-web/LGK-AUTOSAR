@@ -39,9 +39,13 @@ to install, configure, call, troubleshoot, or maintain LGK-Vector.
 4. Generate only the affected module unless full generation is explicitly
    required. `generate_code` and `auto_solve_errors` must name a module;
    `module:"all"` is accepted only as an explicit opt-in.
-5. Report ECUC configuration changes separately from generated C/H/LSL output.
-6. Preserve unrelated user changes and stage only task files.
-7. End every resident-host session with `shutdown_host`.
+5. Before synchronization or handoff, run `verify_delivery` against the actual
+   compile-project files. Require `passed:true`; use `same_as` for exact generated
+   file synchronization and `must_contain`/`must_not_contain` for task-specific
+   assertions.
+6. Report ECUC configuration changes separately from generated C/H/LSL output.
+7. Preserve unrelated user changes and stage only task files.
+8. End every resident-host session with `shutdown_host`.
 
 ## Three-minute rule for ordinary changes
 
@@ -270,9 +274,29 @@ Avoid these previously observed mistakes:
 
 Supported functions are `inspect_ecuc_containers`, `find_module`,
 `find_module_template`, `get_param_definition`, `locate_container`,
-`edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
+`verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
 `update_project`, `import_dbc`, and `shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
 accepted.
+
+`verify_delivery` is a local read-only gate. Pass an absolute `root` that
+contains the configured DaVinci Cfg directory, then use root-relative `path`
+and optional `same_as` values. It compares exact file bytes and checks exact
+required/forbidden byte strings. Enforcement defaults to true, so a missing,
+stale, or invalid compiled file makes the request fail; use `enforce:false`
+only to retrieve diagnostic JSON, never as acceptance evidence.
+
+```json
+{
+  "func": "verify_delivery",
+  "root": "D:\\Work\\Vehicle",
+  "checks": [{
+    "path": "Proj_Code\\_01_BSW\\Gen\\GenData\\Can_Lcfg.c",
+    "same_as": "Proj_Config\\Bsw_Config\\Gen\\GenData\\Can_Lcfg.c",
+    "must_contain": ["CanIsr_0", "0xF0018200u"],
+    "must_not_contain": ["CanIsr_1"]
+  }]
+}
+```
 
 `find_module_template` is compact by default: it returns container hierarchy
 and direct parameter/reference names, not every description and range. Query

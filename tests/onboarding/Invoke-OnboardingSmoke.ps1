@@ -121,7 +121,7 @@ try {
     Assert-True ($doctor.valid -eq $true) 'initializer doctor must report valid=true'
     Assert-True ($doctor.preflight -eq 'static') 'doctor must label itself as a static preflight'
     Assert-True ($doctor.davinci_executed -eq $false) 'doctor must not claim that DaVinci was executed'
-    Assert-True ($doctor.version -eq '0.3.5') 'initializer must use the current release binary'
+    Assert-True ($doctor.version -eq '0.3.6') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
     $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
@@ -178,6 +178,25 @@ try {
     $inspect = (($inspectOutput | Out-String) | ConvertFrom-Json)
     Assert-True (@($inspect).Count -eq 1) 'inspect must return one configured signal'
     Assert-True ([string]$inspect.values.ComBitPosition -eq '8') 'inspect must return ComBitPosition=8'
+
+    $generatedDelivery = Join-Path $temporaryRoot 'Generated\Com_Cfg.h'
+    $compiledDelivery = Join-Path $temporaryRoot 'Proj_Code\Com_Cfg.h'
+    Write-Utf8 -Path $generatedDelivery -Content '#define COM_CONFIG_VALUE 8'
+    Write-Utf8 -Path $compiledDelivery -Content '#define COM_CONFIG_VALUE 8'
+    $deliveryRequest = [ordered]@{
+        func = 'verify_delivery'
+        root = $temporaryRoot
+        checks = @([ordered]@{
+            path = 'Proj_Code\Com_Cfg.h'
+            same_as = 'Generated\Com_Cfg.h'
+            must_contain = @('COM_CONFIG_VALUE 8')
+            must_not_contain = @('COM_CONFIG_VALUE 7')
+        })
+    } | ConvertTo-Json -Compress -Depth 5
+    $deliveryOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request $deliveryRequest)
+    $delivery = (($deliveryOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($delivery.passed -eq $true) 'verify_delivery must accept synchronized generated output'
+    Assert-True ($delivery.checks[0].synchronized -eq $true) 'verify_delivery must compare generated and compiled files'
 
     $bomRequest = Join-Path $temporaryRoot 'request-with-bom.json'
     $bomEncoding = [System.Text.UTF8Encoding]::new($true)
@@ -263,7 +282,7 @@ try {
     $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKVector.ps1'
     $packageDoctorOutput = @(& $packageInitializer -ProjectPath $packageProject -ToolPath $tool)
     $packageDoctor = (($packageDoctorOutput | Out-String) | ConvertFrom-Json)
-    Assert-True ($packageDoctor.version -eq '0.3.5') 'packaged initializer must use packaged binaries by default'
+    Assert-True ($packageDoctor.version -eq '0.3.6') 'packaged initializer must use packaged binaries by default'
 
     $activeWrapper = $packageWrapper
     $activeProject = $packageProject
