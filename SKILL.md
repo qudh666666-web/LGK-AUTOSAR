@@ -169,6 +169,17 @@ When launching a build outside the IDE, capture and wait for the owned
 `amk`/`ctc`/`cctc` process tree to exit. Never start another build while one is
 still active, and never infer success from partial console output.
 
+When the transceiver driver package changes, treat the TASKING/CDT project
+metadata as part of the atomic replacement. In `.cproject`, replace the old
+driver and `mak` include paths and exclude both the old driver source directory
+and its stale generated `CanTrcv_*_Cfg.c` from source discovery. Save and close
+the IDE project before editing `.cproject`; an open IDE can overwrite an
+external edit from its in-memory model. Regenerate the Debug makefiles from the
+updated project metadata and run a serialized clean build. A successful build
+against pre-existing or manually repaired Debug makefiles does not prove that
+the IDE project is synchronized. Verify the new driver/config compile once,
+the old driver/config compile zero times, and then inspect the linked MAP.
+
 ### Zero-traffic acceptance gate
 
 Never declare a CAN switch fixed merely because ECUC generation or a Tasking
@@ -210,6 +221,17 @@ Avoid these previously observed mistakes:
   area. Remove obsolete mappings when it does not.
 - Update EcuC initialization entries and BswM/EcuM user callouts when a driver
   implementation name changes. Search generated output for the old symbol.
+  Treat preserved user-code regions such as `EcuM_Callout_Stubs.c` as source
+  inputs: replace the API, channel macro, and every operation-mode macro with
+  symbols verified in the target driver headers, regenerate `EcuM`, and confirm
+  the user-code edit survives before synchronizing it to the compile project.
+- Synchronize only outputs of modules changed for the current task. Never copy
+  unrelated MCAL output from a full-generation run into the compile project.
+  Before copying `Dio`, `Port`, `Mcu`, `Icu`, or `Gtm` output, prove that module
+  is affected and diff it against Git; otherwise preserve the compile baseline.
+  If an unrelated sync removes a business-code symbol such as a DIO channel,
+  restore only those known generated files and rebuild—do not patch the
+  dependent application/CDD source to hide the mismatch.
 - Do not trust an old generation report or a resident DaVinci model after an
   ARXML edit. Restart once, generate once, and read the newest report timestamp.
 - Do not conflate an `ELF` that links with a bus that transmits. Link success
