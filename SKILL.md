@@ -131,6 +131,20 @@ When Project Update changes `FlatExtract`, `.dpa`, DBC-derived content, or logs,
 review and stage them separately; never commit those by default with the CAN
 repair.
 
+Treat `Os` and `vLinkGen` as directly affected whenever the controller ISR name
+changes. Generate both after `Can`; require `Os_Isr_Lcfg.c` to define the same
+`CanIsr_*` name used by `Can_Lcfg.c`, with no old ISR name left. `CanSRC` is a
+CAN-driver selection, not necessarily the OS interrupt-source number: obtain
+the latter from a validated matching derivative configuration, and ensure the
+target ISR is assigned to an OS Application and stack before generation.
+
+Treat `CanIf` as directly affected whenever the transceiver implementation
+changes. Regenerate it and require the active `CanIf_Cfg.h` callback macro to
+match the target driver (for example `CanIf_30_Tja1040_TrcvModeIndication`).
+Run an incremental compile/link before handoff. If the make rules omit header
+dependencies, remove only the stale, regenerable target driver object and
+rebuild; never patch the driver source or generated callback macro by hand.
+
 ### Zero-traffic acceptance gate
 
 Never declare a CAN switch fixed merely because ECUC generation or a Tasking

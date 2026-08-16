@@ -4,6 +4,17 @@
 
 ## Unreleased - 2026-08-15
 
+- Skill: add the required OS/vLinkGen and CanIf portions of a controller or
+  transceiver replacement. The handoff now proves the ISR name is consistently
+  generated in Can and Os, distinguishes `CanSRC` from the derivative-specific
+  OS interrupt-source number, verifies OS-Application/stack assignment, and
+  requires regeneration of the transceiver callback macro plus a real link.
+- Validation: applied to the TC275 CAN0 repair after a build exposed an
+  undefined `CanIsr_0` and then an unresolved
+  `CanIf_30_Tja1040_TrcvModeIndication`; Os, vLinkGen, and CanIf were generated
+  with zero report errors, the stale driver object was rebuilt, and the final
+  MAP contained TJA1040/CanIsr_0 with no TJA1043/CanIsr_1 symbols.
+
 - Skill: make the CAN1-to-CAN0 checklist executable at handoff. It now requires
   recording `CanSRC` alongside controller/pin data, running Project Update once
   after a transceiver BSWMD replacement, checking the regenerated RTE task
