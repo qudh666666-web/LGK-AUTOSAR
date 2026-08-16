@@ -4,6 +4,15 @@
 
 ## Unreleased - 2026-08-15
 
+- Skill: add a detailed, low-freedom five-minute runbook for the proven TC275
+  CAN1-to-CAN0/TJA1040 conversion. It separates DaVinci `Can` ECUC edits from
+  EB tresos `Port.xdm` generation, records the actual P20.6/P20.7/P20.8 mapping,
+  synchronizes only compiled outputs, and requires generated-value assertions
+  before handoff or Git commit.
+- Validation: the runbook is based on the repaired TC275 configuration where
+  `Can_InitPortSel=1`, P20.6 is GPIO output-low, P20.8 is ALT5 output, and the
+  user confirmed normal bus traffic after generation and synchronization.
+
 - Skill: make the physical pin mux and receive selector mandatory in a CAN0
   handoff. It now forbids deriving RXSEL/`CanIOPort` from the node number and
   records the proven TC275 CAN0 mapping: Node0/base `0xF0018200`, P20.7

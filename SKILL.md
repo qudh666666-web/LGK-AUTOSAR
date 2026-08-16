@@ -127,6 +127,11 @@ initial level. Inspect the generated `Can_InitPortSel` and `Port_PBCfg.c`; a
 correct controller with GPIO-input TX or input-mode transceiver enable produces
 a silent physical bus even when generation, compilation, and flashing succeed.
 
+For the reproducible TC275/TJA1040 conversion, read
+[the TC275 CAN1-to-CAN0 five-minute runbook](references/tc275-can1-to-can0-5min.md)
+before editing. It is a low-freedom procedure: use it only when the project and
+schematic match the stated controller, pins, and transceiver.
+
 After a transceiver BSWMD replacement, run one `update_project`, then inspect
 the refreshed `CanTrcv` and `Rte` containers. Project Update can recreate the
 target BSW Internal Behavior and an RTE event mapping while leaving its OS task,
