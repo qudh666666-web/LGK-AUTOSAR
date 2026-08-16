@@ -4,6 +4,17 @@
 
 ## Unreleased - 2026-08-15
 
+- Skill: make the CAN1-to-CAN0 checklist executable at handoff. It now requires
+  recording `CanSRC` alongside controller/pin data, running Project Update once
+  after a transceiver BSWMD replacement, checking the regenerated RTE task
+  mapping, and proving the compiled RTE invokes the target transceiver main
+  function. It also requires separating Project Update side effects from the
+  CAN commit.
+- Validation: applied to a TC275 CAN1-to-CAN0/TJA1043-to-TJA1040 repair:
+  `CanSRC=1` was rejected for Node0; Project Update created the target behavior
+  but initially left its 5 ms RTE mapping incomplete; regenerated Can, CanTrcv,
+  and Rte reports each had zero errors after the target task binding was added.
+
 - Skill: generation responses are now provisional until the newest DaVinci Generation Report proves zero validation errors and a successful `GENERATION` phase; driver replacements must verify target BSW Internal Behavior before retaining RTE BSW-instance mappings.
 - Validation: reviewed against a real TJA1043-to-TJA1040 replacement where DaVinci reported `RTE01006` although the wrapper returned a completion response; skill syntax validation is pending because the bundled validator Python lacks `PyYAML`.
 

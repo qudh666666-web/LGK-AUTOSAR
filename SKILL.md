@@ -110,6 +110,27 @@ For a CAN1-to-CAN0 (or inverse) replacement, treat these as one atomic change:
   insufficient; without the matching `ComM_RequestComMode(...FULL...)`, all
   application frames can remain silent.
 
+### Mandatory CAN0 handoff checks
+
+Before generating or committing a CAN1-to-CAN0 change, record the target
+`Can` controller base address, `CanSRC`, RX input selection, ISR name, and the
+physical transceiver part/pins from the schematic. Do not change the displayed
+node name alone.
+
+After a transceiver BSWMD replacement, run one `update_project`, then inspect
+the refreshed `CanTrcv` and `Rte` containers. Project Update can recreate the
+target BSW Internal Behavior and an RTE event mapping while leaving its OS task,
+alarm, and event references empty. Reuse the proven prior period/task only when
+the target timing event has the same period; otherwise obtain the scheduling
+decision instead of guessing.
+
+Before handoff, search the active compiled RTE sources for the target
+`CanTrcv_*_MainFunction()` call and for absence of the old transceiver symbol.
+An error-free report without that call does not prove wake-up polling runs.
+When Project Update changes `FlatExtract`, `.dpa`, DBC-derived content, or logs,
+review and stage them separately; never commit those by default with the CAN
+repair.
+
 ### Zero-traffic acceptance gate
 
 Never declare a CAN switch fixed merely because ECUC generation or a Tasking
