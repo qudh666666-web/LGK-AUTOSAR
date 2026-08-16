@@ -4,6 +4,9 @@
 
 ## Unreleased - 2026-08-15
 
+- Skill: generation responses are now provisional until the newest DaVinci Generation Report proves zero validation errors and a successful `GENERATION` phase; driver replacements must verify target BSW Internal Behavior before retaining RTE BSW-instance mappings.
+- Validation: reviewed against a real TJA1043-to-TJA1040 replacement where DaVinci reported `RTE01006` although the wrapper returned a completion response; skill syntax validation is pending because the bundled validator Python lacks `PyYAML`.
+
 - 新增 `scripts/Build-LGKVector.ps1` 作为中央源码仓库唯一的 EXE 构建入口：在当前进程绑定工程内私有 Rust、Rustup 与已验证的 `dlltool.exe`，默认离线构建，不改系统环境、DaVinci 或 AUTOSAR 工程；
 - 实现提交：本次变更提交（提交后以 Git 日志中的 `Reject mutating request batches in wrapper` 定位）；
 - 包装器在启动 Host 前拒绝多项数组中的 `edit_file`、`auto_solve_errors`、`generate_code`、`update_project`、`import_dbc` 与 `shutdown_host`，使其与既有 Rust 调度约束一致；

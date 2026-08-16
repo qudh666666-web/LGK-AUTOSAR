@@ -72,6 +72,27 @@ For a CAN0/CAN1 switch, inspect and change this chain in order:
 5. Generate `CanTrcv`, then only the affected integration modules. Verify the
    active generated C/H files and build exclusions; do not run full generation.
 
+### Validation gate after every generation
+
+Treat an LGK `generation completed` response as provisional. Immediately read
+the newest DaVinci Generation Report and require all of the following before
+calling generation successful, synchronizing generated files, committing, or
+reporting completion:
+
+- Validation has zero errors.
+- The requested module has `Execution Result: SUCCESS` and its `GENERATION`
+  phase is successful.
+- The report does not say that the generator was not started because the
+  configuration contains errors.
+
+If a driver implementation is replaced (for example TJA1043 to TJA1040),
+inspect the target BSW Internal Behavior before retaining or rewriting the
+`RteBswModuleInstance`. If the target provides no matching internal behavior,
+timing event, or exclusive area, remove the stale RTE mapping only after
+confirming its exact container and determine the supported scheduling path.
+Never infer success from a wrapper response while DaVinci reports a validation
+failure.
+
 ### Controller replacement checklist
 
 For a CAN1-to-CAN0 (or inverse) replacement, treat these as one atomic change:
