@@ -29,23 +29,30 @@
   and requires both process exit and stdout EOF within a budget; the
   pre-fix binary fails this probe while the fixed binary completes in
   seconds. The Rust suite gained `CreateProcessW` command-line quoting tests.
+- Tooling: maintainer scripts are now Windows PowerShell 5.1 safe on Chinese
+  Windows. `Build-LGKVector.ps1` and the onboarding suite carry a UTF-8 BOM
+  so their Chinese text no longer breaks parsing or degrades into mojibake
+  fixture paths; the onboarding temporary fixture therefore exercises real
+  Chinese-and-space paths again. `Sync-LGKVectorPackage.ps1` and
+  `Invoke-PackageManifestSmoke.ps1` now read Git path output with a UTF-8
+  console encoding (restored afterwards), because `git ls-files` emits raw
+  UTF-8 bytes that PS 5.1 otherwise decodes as ANSI, silently dropping
+  Chinese-named files from manifests and fixtures.
 - Validation: 33 Rust tests passed (31 previous plus 2 new); the onboarding
   suite passed 50 assertions including the pipe regression probe and the
-  packaged-binary path; the dependency-license guard passed. The exact
-  incident topology (backgrounded bash pipeline plus a fresh Host spawn)
-  completed in 5 seconds on the fixed build versus an indefinite hang
-  before, and a real TC275 read-only request followed by `shutdown_host`
-  then verified end to end with both ports released.
+  packaged-binary path; the dependency-license guard and the package
+  manifest smoke (13 assertions) passed on the local Chinese-Windows
+  PowerShell 5.1 machine; `Build-LGKVector.ps1` ran end to end under
+  PowerShell 5.1. The exact incident topology (backgrounded bash pipeline
+  plus a fresh Host spawn) completed in 5 seconds on the fixed build versus
+  an indefinite hang before, and a real TC275 read-only request followed by
+  `shutdown_host` then verified end to end with both ports released.
 - Build: release CLI and Host both report `0.3.7`, protocol 2, rebuilt with
   the project-private offline GNU toolchain. The private toolchain still
   lacks rustfmt/clippy, so formatting was reviewed manually; compilation and
   all executable tests passed.
-- Limitations: `Invoke-PackageManifestSmoke.ps1` fails on this
-  Chinese-Windows PowerShell 5.1 machine because `git ls-files` output with
-  Chinese filenames is decoded as ANSI and the fixture never copies `docs\`;
-  verified identical on the pre-change tree, so the failure is environmental
-  and unrelated to this change. `Invoke-OpenSourceGuard.ps1 -IncludeHistory`
-  still rejects the private development history, as documented since v0.3.0.
+- Limitations: `Invoke-OpenSourceGuard.ps1 -IncludeHistory` still rejects the
+  private development history, as documented since v0.3.0.
 
 ## v0.3.6 - 2026-08-16
 
