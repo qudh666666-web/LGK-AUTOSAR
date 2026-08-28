@@ -57,7 +57,16 @@ $packageFiles = @(
 )
 $releaseTestPrefix = 'tests/release/'
 
-$repositoryRootOutput = @(& git -C $source rev-parse --show-toplevel 2>&1)
+# git 把仓库路径输出为原始 UTF-8 字节；Windows PowerShell 5.1 默认按 ANSI
+# 代码页解码原生命令输出，中文文件名或中文仓库根路径会变成对不上工作区
+# 的路径。读取 Git 输出期间临时使用 UTF-8 控制台编码，结束后恢复。
+$previousConsoleEncoding = [Console]::OutputEncoding
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+try {
+    $repositoryRootOutput = @(& git -C $source rev-parse --show-toplevel 2>&1)
+} finally {
+    [Console]::OutputEncoding = $previousConsoleEncoding
+}
 if ($LASTEXITCODE -ne 0) {
     throw "SourceRoot must be a Git worktree so the release manifest can exclude ignored customer files: $($repositoryRootOutput -join [Environment]::NewLine)"
 }
@@ -75,7 +84,12 @@ if (-not (Test-Path -LiteralPath $contentGuard -PathType Leaf)) {
 }
 & $contentGuard | Out-Null
 
-$manifest = @(& git -C $source -c core.quotepath=false ls-files --cached --others --exclude-standard 2>&1)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+try {
+    $manifest = @(& git -C $source -c core.quotepath=false ls-files --cached --others --exclude-standard 2>&1)
+} finally {
+    [Console]::OutputEncoding = $previousConsoleEncoding
+}
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to read the public Git manifest: $($manifest -join [Environment]::NewLine)"
 }
