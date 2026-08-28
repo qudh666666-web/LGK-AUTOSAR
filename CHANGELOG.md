@@ -2,6 +2,51 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## v0.3.7 - 2026-08-29
+
+- Core: the resident Host is now spawned through `CreateProcessW` with
+  `bInheritHandles=FALSE`, `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`, and
+  explicit empty standard streams. Rust's `Command` spawn cannot disable
+  handle inheritance, so every inheritable pipe in the caller chain
+  (PowerShell capture pipes, bash/MSYS pipelines, .NET redirection pipes)
+  also entered the never-exiting Host, and the caller's pipeline then stayed
+  open forever after all foreground processes had exited. This reproduced as
+  a silent indefinite hang with zero output when the wrapper ran from a
+  backgrounded Git Bash pipeline on a real TC275 project (2026-08-29). The
+  v0.3.0 mitigation only cleared the CLI's own three standard handles and
+  could not cover these outer inheritance sources. Implementation commit:
+  `530a744`.
+- Wrapper: every CLI invocation in `Invoke-LGKVector.ps1` now runs under a
+  hard watchdog (`--version` 15s, `--start-host` 60s, doctor 90s, request
+  185s). On timeout the child process tree is terminated and the captured
+  partial output is reported, so a wedged CLI can no longer hang the
+  caller's shell or an agent pipeline indefinitely. The wrapper now invokes
+  the CLI through .NET redirection with an explicit working directory and
+  still exports the CLI exit code through `$LASTEXITCODE` for callers such
+  as the initializer; output and error message formats are unchanged.
+- Tests: the onboarding suite gained a pipe-topology regression probe. It
+  runs the first real wrapper request through a redirected child PowerShell
+  and requires both process exit and stdout EOF within a budget; the
+  pre-fix binary fails this probe while the fixed binary completes in
+  seconds. The Rust suite gained `CreateProcessW` command-line quoting tests.
+- Validation: 33 Rust tests passed (31 previous plus 2 new); the onboarding
+  suite passed 50 assertions including the pipe regression probe and the
+  packaged-binary path; the dependency-license guard passed. The exact
+  incident topology (backgrounded bash pipeline plus a fresh Host spawn)
+  completed in 5 seconds on the fixed build versus an indefinite hang
+  before, and a real TC275 read-only request followed by `shutdown_host`
+  then verified end to end with both ports released.
+- Build: release CLI and Host both report `0.3.7`, protocol 2, rebuilt with
+  the project-private offline GNU toolchain. The private toolchain still
+  lacks rustfmt/clippy, so formatting was reviewed manually; compilation and
+  all executable tests passed.
+- Limitations: `Invoke-PackageManifestSmoke.ps1` fails on this
+  Chinese-Windows PowerShell 5.1 machine because `git ls-files` output with
+  Chinese filenames is decoded as ANSI and the fixture never copies `docs\`;
+  verified identical on the pre-change tree, so the failure is environmental
+  and unrelated to this change. `Invoke-OpenSourceGuard.ps1 -IncludeHistory`
+  still rejects the private development history, as documented since v0.3.0.
+
 ## v0.3.6 - 2026-08-16
 
 - Core: add the generic read-only `verify_delivery` request. It checks actual
