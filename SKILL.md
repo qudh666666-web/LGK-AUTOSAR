@@ -24,6 +24,29 @@ entry. It uses root release binaries when present, otherwise
 `docs/跨工程接入.md` when connecting another project or when the user asks how
 to install, configure, call, troubleshoot, or maintain LGK-Vector.
 
+## Linear collaboration
+
+When the work is tracked in the connected Linear workspace, use Linear as the
+engineering record alongside the local Git history. Search or fetch the linked
+issue first and use it to capture the requested ECUC scope, affected modules,
+constraints, blockers, and acceptance evidence. Attach or link concise
+artifacts where useful: a generation-report excerpt, verification result,
+build/MAP evidence, or a release commit.
+
+Linear is a coordination layer, not a source of configuration truth. The DPA,
+ECUC ARXML, generated sources, fresh DaVinci Generation Report, and local build
+remain the authoritative evidence for an AUTOSAR change. Do not let an issue
+status, comment, or review substitute for the mandatory ECUC workflow or its
+validation gates.
+
+Use Linear read operations by default when a Linear issue/project is supplied
+or a task is clearly tracked there. Create or update issues, comments, status,
+attachments, releases, or review decisions only when the user explicitly asks
+for that external update. Never create duplicate work items merely to record a
+local LGK-Vector task. When writing an approved update, distinguish ECUC edits
+from generated output and include the exact validation outcome; if a gate is
+pending or failed, state it rather than advancing the issue as complete.
+
 ## Mandatory ECUC workflow
 
 1. Record the target repository's Git status before generation or edits.
