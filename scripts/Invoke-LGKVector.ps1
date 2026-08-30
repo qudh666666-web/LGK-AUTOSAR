@@ -57,12 +57,92 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
 $executableDirectory = Split-Path -Parent $executable
 $hostExecutable = Join-Path $executableDirectory 'lgk-vector-host.exe'
 
+function ConvertTo-WindowsArgument {
+    # MSVCRT argv 规则：参数含空白或引号时整体加引号；引号前的反斜杠翻倍并
+    # 转义引号，结尾反斜杠翻倍，其余反斜杠保持原样。本包装器只传标志和路径。
+    param([Parameter(Mandatory)][string]$Value)
+
+    if ($Value -ne '' -and $Value -notmatch '[\s"]') {
+        return $Value
+    }
+    $escaped = ''
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashes++
+            continue
+        }
+        $prefix = '\' * $backslashes
+        if ($character -eq '"') {
+            $prefix = '\' * ($backslashes * 2 + 1)
+        }
+        $escaped += $prefix + $character
+        $backslashes = 0
+    }
+    $escaped += '\' * ($backslashes * 2)
+    return '"' + $escaped + '"'
+}
+
+function Invoke-BridgeExecutable {
+    # 以硬超时执行一次 CLI 调用：任何一次外部调用都不允许无限挂起。超时先
+    # 终止子进程树并抛错（附已捕获的部分输出）；正常结束返回退出码和标准
+    # 输出/错误文本，由调用方沿用原有错误消息格式。工作目录显式取当前
+    # PowerShell 位置：.NET Process.Start 不跟随 Push-Location，而 CLI 依赖
+    # 工作目录中的 lgk-vector.json。
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [Parameter(Mandatory)][int]$TimeoutSeconds
+    )
+
+    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processInfo.FileName = $FilePath
+    $processInfo.Arguments = (($Arguments | ForEach-Object { ConvertTo-WindowsArgument $_ }) -join ' ')
+    $processInfo.WorkingDirectory = (Get-Location).ProviderPath
+    $processInfo.UseShellExecute = $false
+    $processInfo.RedirectStandardOutput = $true
+    $processInfo.RedirectStandardError = $true
+    $processInfo.CreateNoWindow = $true
+    $processInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $processInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $processInfo
+    if (-not $process.Start()) {
+        throw "Failed to start the LGK-Vector executable: $FilePath"
+    }
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        $timedOutProcessId = $process.Id
+        & taskkill.exe /PID $timedOutProcessId /T /F | Out-Null
+        $process.WaitForExit()
+        $global:LASTEXITCODE = 1
+        $partialStdout = ''
+        $partialStderr = ''
+        if ($stdoutTask.Wait(5000)) { $partialStdout = [string]$stdoutTask.Result }
+        if ($stderrTask.Wait(5000)) { $partialStderr = [string]$stderrTask.Result }
+        throw ("LGK-Vector executable '{0}' exceeded the {1}s timeout and its process tree was terminated. Partial stdout: {2} Partial stderr: {3}" -f $FilePath, $TimeoutSeconds, $partialStdout, $partialStderr)
+    }
+    $stdoutTask.Wait()
+    $stderrTask.Wait()
+    # 与原生命令保持同一契约：调用方（如 Initialize 脚本）依赖 $LASTEXITCODE
+    # 反映最后一次 CLI 调用的退出码。.NET Process 不会自动设置它。
+    $global:LASTEXITCODE = $process.ExitCode
+    [pscustomobject]@{
+        ExitCode = $process.ExitCode
+        StdOut = [string]$stdoutTask.Result
+        StdErr = [string]$stderrTask.Result
+    }
+}
+
 function Get-BridgeIdentity([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "Bridge executable was not found: $Path"
     }
-    $output = @(& $Path --version 2>&1)
-    if ($LASTEXITCODE -ne 0 -or $output.Count -ne 1) {
+    $versionResult = Invoke-BridgeExecutable -FilePath $Path -Arguments @('--version') -TimeoutSeconds 15
+    $output = @($versionResult.StdOut -split "\r?\n" | Where-Object { $_ -ne '' })
+    if ($versionResult.ExitCode -ne 0 -or $output.Count -ne 1) {
         throw "Bridge executable cannot complete the required --version check: $Path. The CLI/Host pair is stale or incomplete; rebuild both with 'cargo build --release' (or install one matching GitHub release package) before using this wrapper."
     }
     $match = [regex]::Match(
@@ -100,11 +180,12 @@ if (Test-Path -LiteralPath $pairManifestPath -PathType Leaf) {
 
 function Start-BridgeHost {
     # 由 Rust CLI 完成 Token、协议、版本和端口身份探测，避免只凭 TCP
-    # 端口可连接就误判为当前 LGK-Vector Host。CLI 在创建 Host 前会清除
-    # PowerShell 重定向句柄的继承标志，因此这里捕获输出不会被常驻进程拖住。
-    $hostOutput = @(& $executable --start-host 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "Bridge host failed to start or pass its protocol probe: $($hostOutput -join [Environment]::NewLine)"
+    # 端口可连接就误判为当前 LGK-Vector Host。CLI 通过 bInheritHandles=FALSE
+    # 的 CreateProcessW 拉起常驻 Host，调用方的管道/控制台句柄不会进入 Host。
+    $hostResult = Invoke-BridgeExecutable -FilePath $executable -Arguments @('--start-host') -TimeoutSeconds 60
+    if ($hostResult.ExitCode -ne 0) {
+        $hostDetail = ("{0} {1}" -f $hostResult.StdOut, $hostResult.StdErr).Trim()
+        throw "Bridge host failed to start or pass its protocol probe: $hostDetail"
     }
 }
 
@@ -133,6 +214,7 @@ try {
         'get_param_definition',
         'get_bsw_param_definition',
         'locate_container',
+        'verify_delivery',
         'edit_file',
         'get_errors_list',
         'auto_solve_errors',
@@ -168,11 +250,12 @@ try {
     if ($ValidateOnly) {
         Push-Location -LiteralPath $project
         try {
-            $doctorOutput = @(& $executable --doctor --request-file $requestPath 2>&1)
-            if ($LASTEXITCODE -ne 0) {
-                throw "LGK-Vector doctor failed: $($doctorOutput -join [Environment]::NewLine)"
+            $doctorResult = Invoke-BridgeExecutable -FilePath $executable -Arguments @('--doctor', '--request-file', $requestPath) -TimeoutSeconds 90
+            if ($doctorResult.ExitCode -ne 0) {
+                $doctorDetail = ("{0} {1}" -f $doctorResult.StdOut, $doctorResult.StdErr).Trim()
+                throw "LGK-Vector doctor failed: $doctorDetail"
             }
-            $doctorOutput | Write-Output
+            $doctorResult.StdOut | Write-Output
         } finally {
             Pop-Location
         }
@@ -188,12 +271,12 @@ try {
             Start-BridgeHost
         }
         # 真正的请求处理从这里进入 Rust CLI，再转给 resident Host。
-        $requestOutput = @(& $executable --request-file $requestPath 2>&1)
-        $requestExitCode = $LASTEXITCODE
-        if ($requestExitCode -ne 0) {
-            throw "Bridge request failed (exit $requestExitCode, request: $requestPath): $($requestOutput -join [Environment]::NewLine)"
+        $requestResult = Invoke-BridgeExecutable -FilePath $executable -Arguments @('--request-file', $requestPath) -TimeoutSeconds 185
+        if ($requestResult.ExitCode -ne 0) {
+            $requestDetail = ("{0} {1}" -f $requestResult.StdOut, $requestResult.StdErr).Trim()
+            throw "Bridge request failed (exit $($requestResult.ExitCode), request: $requestPath): $requestDetail"
         }
-        $requestOutput | Write-Output
+        $requestResult.StdOut | Write-Output
     } finally {
         Pop-Location
     }

@@ -2,7 +2,6 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -358,7 +357,6 @@ fn open_request_lock(path: &Path) -> std::io::Result<fs::File> {
 
 fn start_host(token_path: &Path) -> Result<()> {
     // Host EXE 与 CLI EXE 必须同目录发布，避免调用到另一个版本的后台程序。
-    prevent_standard_handle_inheritance();
     let current = std::env::current_exe()?;
     let directory = current
         .parent()
@@ -370,20 +368,8 @@ fn start_host(token_path: &Path) -> Result<()> {
             executable.display()
         );
     }
-    let mut command = Command::new(&executable);
-    command
-        .arg("--port")
-        .arg(DEFAULT_HOST_PORT.to_string())
-        .arg("--token-file")
-        .arg(token_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    detach_resident_host(&mut command);
-    command
-        .spawn()
-        .with_context(|| format!("start {}", executable.display()))?;
-    Ok(())
+    spawn_resident_host(&executable, token_path)
+        .with_context(|| format!("start {}", executable.display()))
 }
 
 fn host_executable(directory: &Path) -> PathBuf {
@@ -398,52 +384,234 @@ fn host_executable(directory: &Path) -> PathBuf {
 }
 
 #[cfg(windows)]
-fn detach_resident_host(command: &mut Command) {
-    use std::os::windows::process::CommandExt;
-    // DETACHED_PROCESS is important when the CLI itself is called from a
-    // captured PowerShell pipeline (`@(& lgk-vector.exe --start-host 2>&1)`).
-    // Without it, the resident process can keep the caller's console/pipe
-    // lifetime alive after the short-lived CLI has exited.
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
-}
-
-#[cfg(windows)]
-fn prevent_standard_handle_inheritance() {
+fn spawn_resident_host(executable: &Path, token_path: &Path) -> Result<()> {
     use std::ffi::c_void;
 
     type Handle = *mut c_void;
-    const STD_INPUT_HANDLE: u32 = (-10_i32) as u32;
-    const STD_OUTPUT_HANDLE: u32 = (-11_i32) as u32;
-    const STD_ERROR_HANDLE: u32 = (-12_i32) as u32;
-    const HANDLE_FLAG_INHERIT: u32 = 0x0000_0001;
+
+    #[repr(C)]
+    struct StartupInfoW {
+        cb: u32,
+        reserved: *mut u16,
+        desktop: *mut u16,
+        title: *mut u16,
+        x: u32,
+        y: u32,
+        x_size: u32,
+        y_size: u32,
+        x_count_chars: u32,
+        y_count_chars: u32,
+        fill_attribute: u32,
+        flags: u32,
+        show_window: u16,
+        reserved2: u16,
+        cb_reserved2: *mut u8,
+        standard_input: Handle,
+        standard_output: Handle,
+        standard_error: Handle,
+    }
+
+    #[repr(C)]
+    struct ProcessInformation {
+        process: Handle,
+        thread: Handle,
+        process_id: u32,
+        thread_id: u32,
+    }
+
+    const STARTF_USESTDHANDLES: u32 = 0x0000_0100;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        fn GetStdHandle(kind: u32) -> Handle;
-        fn SetHandleInformation(handle: Handle, mask: u32, flags: u32) -> i32;
+        fn CreateProcessW(
+            application_name: *const u16,
+            command_line: *mut u16,
+            process_attributes: *const c_void,
+            thread_attributes: *const c_void,
+            inherit_handles: i32,
+            creation_flags: u32,
+            environment: *const c_void,
+            current_directory: *const u16,
+            startup_info: *mut StartupInfoW,
+            process_information: *mut ProcessInformation,
+        ) -> i32;
+        fn CloseHandle(handle: Handle) -> i32;
+        fn GetLastError() -> u32;
     }
 
-    // PowerShell marks redirection pipe/file handles inheritable.  Rust's
-    // child-process launch may otherwise pass those unrelated handles to the
-    // resident Host even though its own stdin/stdout/stderr are NUL.  Clearing
-    // only the inheritance bit does not close or otherwise alter the CLI's
-    // current streams.
-    for kind in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
-        // SAFETY: GetStdHandle returns a process-owned pseudo handle and
-        // SetHandleInformation is called only to clear HANDLE_FLAG_INHERIT.
-        unsafe {
-            let handle = GetStdHandle(kind);
-            if !handle.is_null() && handle as isize != -1 {
-                let _ = SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
-            }
-        }
+    // bInheritHandles 必须为 FALSE。Rust 标准库的 spawn 无法关闭句柄继承：
+    // 调用链上任何标记为可继承的管道（PowerShell 捕获管道、bash/MSYS 管道、
+    // .NET 重定向管道）都会随子进程进入常驻 Host。Host 永不退出，调用方的
+    // 管道就永远等不到 EOF，整条 shell 管道在所有前台进程退出后假死
+    // （2026-08 Git Bash 管道事故；v0.3.0 只清理了 CLI 自身三个标准流句柄，
+    // 覆盖不到这些更外层的继承来源）。因此这里绕过标准库直接 CreateProcessW：
+    // Host 不继承任何句柄，三个标准流显式为空，配合 DETACHED_PROCESS |
+    // CREATE_NEW_PROCESS_GROUP 与调用方控制台/进程组彻底分离。
+    let mut command_line = windows_command_line(&[
+        executable,
+        Path::new("--port"),
+        Path::new(&DEFAULT_HOST_PORT.to_string()),
+        Path::new("--token-file"),
+        token_path,
+    ]);
+    let mut startup_info = StartupInfoW {
+        cb: std::mem::size_of::<StartupInfoW>() as u32,
+        reserved: std::ptr::null_mut(),
+        desktop: std::ptr::null_mut(),
+        title: std::ptr::null_mut(),
+        x: 0,
+        y: 0,
+        x_size: 0,
+        y_size: 0,
+        x_count_chars: 0,
+        y_count_chars: 0,
+        fill_attribute: 0,
+        // Host 是无控制台的常驻进程，不读写任何标准流。
+        flags: STARTF_USESTDHANDLES,
+        show_window: 0,
+        reserved2: 0,
+        cb_reserved2: std::ptr::null_mut(),
+        standard_input: std::ptr::null_mut(),
+        standard_output: std::ptr::null_mut(),
+        standard_error: std::ptr::null_mut(),
+    };
+    let mut process_information = ProcessInformation {
+        process: std::ptr::null_mut(),
+        thread: std::ptr::null_mut(),
+        process_id: 0,
+        thread_id: 0,
+    };
+    let created = unsafe {
+        CreateProcessW(
+            std::ptr::null(),
+            command_line.as_mut_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            // FALSE：Host 不继承 CLI 进程句柄表中的任何句柄。
+            0,
+            DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+            std::ptr::null(),
+            std::ptr::null(),
+            &mut startup_info,
+            &mut process_information,
+        )
+    };
+    if created == 0 {
+        let code = unsafe { GetLastError() };
+        bail!(
+            "CreateProcessW failed for the resident host: {}",
+            std::io::Error::from_raw_os_error(code as i32)
+        );
     }
+    // SAFETY: CreateProcessW 成功后句柄必然有效，且本进程不再使用它们。
+    unsafe {
+        CloseHandle(process_information.process);
+        CloseHandle(process_information.thread);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn windows_command_line(arguments: &[&Path]) -> Vec<u16> {
+    let mut command_line = Vec::new();
+    for (index, argument) in arguments.iter().enumerate() {
+        if index > 0 {
+            command_line.push(u16::from(b' '));
+        }
+        push_windows_argument(&mut command_line, argument);
+    }
+    command_line.push(0);
+    command_line
+}
+
+#[cfg(windows)]
+fn push_windows_argument(command_line: &mut Vec<u16>, argument: &Path) {
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide: Vec<u16> = argument.as_os_str().encode_wide().collect();
+    let needs_quotes = wide.is_empty()
+        || wide.iter().any(|&character| {
+            character == u16::from(b' ')
+                || character == u16::from(b'\t')
+                || character == u16::from(b'"')
+        });
+    if !needs_quotes {
+        command_line.extend_from_slice(&wide);
+        return;
+    }
+    // MSVCRT argv 规则：整体加引号；引号前的反斜杠翻倍并转义引号，结尾
+    // 反斜杠翻倍，其余反斜杠保持原样。
+    command_line.push(u16::from(b'"'));
+    let mut backslashes = 0usize;
+    for &character in &wide {
+        if character == u16::from(b'\\') {
+            backslashes += 1;
+            continue;
+        }
+        let escaped_backslashes = if character == u16::from(b'"') {
+            backslashes * 2 + 1
+        } else {
+            backslashes
+        };
+        for _ in 0..escaped_backslashes {
+            command_line.push(u16::from(b'\\'));
+        }
+        command_line.push(character);
+        backslashes = 0;
+    }
+    for _ in 0..(backslashes * 2) {
+        command_line.push(u16::from(b'\\'));
+    }
+    command_line.push(u16::from(b'"'));
 }
 
 #[cfg(not(windows))]
-fn detach_resident_host(_command: &mut Command) {}
+fn spawn_resident_host(executable: &Path, token_path: &Path) -> Result<()> {
+    use std::process::{Command, Stdio};
 
-#[cfg(not(windows))]
-fn prevent_standard_handle_inheritance() {}
+    let mut command = Command::new(executable);
+    command
+        .arg("--port")
+        .arg(DEFAULT_HOST_PORT.to_string())
+        .arg("--token-file")
+        .arg(token_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command
+        .spawn()
+        .with_context(|| format!("start {}", executable.display()))?;
+    Ok(())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    fn decode(line: &[u16]) -> String {
+        String::from_utf16(&line[..line.len() - 1]).expect("command line is valid UTF-16")
+    }
+
+    #[test]
+    fn windows_command_line_quotes_paths_with_spaces() {
+        let line = windows_command_line(&[
+            Path::new(r"C:\Tools\LGK Vector\lgk-vector-host.exe"),
+            Path::new("--port"),
+            Path::new("32483"),
+            Path::new("--token-file"),
+            Path::new(r"C:\Users\lgk user\.lgk-vector\host.token"),
+        ]);
+        assert_eq!(
+            decode(&line),
+            "\"C:\\Tools\\LGK Vector\\lgk-vector-host.exe\" --port 32483 --token-file \"C:\\Users\\lgk user\\.lgk-vector\\host.token\""
+        );
+    }
+
+    #[test]
+    fn windows_command_line_doubles_trailing_backslashes() {
+        let line = windows_command_line(&[Path::new(r"C:\tools\host dir\")]);
+        assert_eq!(decode(&line), "\"C:\\tools\\host dir\\\\\"");
+    }
+}

@@ -210,7 +210,7 @@ fn canonical_directory(path: &Path) -> Result<PathBuf> {
 }
 
 #[cfg(windows)]
-fn normalize_canonical_path(path: PathBuf) -> PathBuf {
+pub(crate) fn normalize_canonical_path(path: PathBuf) -> PathBuf {
     use std::ffi::OsString;
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
@@ -257,6 +257,6 @@ fn ascii_upper(value: u16) -> u16 {
 }
 
 #[cfg(not(windows))]
-fn normalize_canonical_path(path: PathBuf) -> PathBuf {
+pub(crate) fn normalize_canonical_path(path: PathBuf) -> PathBuf {
     path
 }

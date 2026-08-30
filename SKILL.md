@@ -24,6 +24,29 @@ entry. It uses root release binaries when present, otherwise
 `docs/跨工程接入.md` when connecting another project or when the user asks how
 to install, configure, call, troubleshoot, or maintain LGK-Vector.
 
+## Linear collaboration
+
+When the work is tracked in the connected Linear workspace, use Linear as the
+engineering record alongside the local Git history. Search or fetch the linked
+issue first and use it to capture the requested ECUC scope, affected modules,
+constraints, blockers, and acceptance evidence. Attach or link concise
+artifacts where useful: a generation-report excerpt, verification result,
+build/MAP evidence, or a release commit.
+
+Linear is a coordination layer, not a source of configuration truth. The DPA,
+ECUC ARXML, generated sources, fresh DaVinci Generation Report, and local build
+remain the authoritative evidence for an AUTOSAR change. Do not let an issue
+status, comment, or review substitute for the mandatory ECUC workflow or its
+validation gates.
+
+Use Linear read operations by default when a Linear issue/project is supplied
+or a task is clearly tracked there. Create or update issues, comments, status,
+attachments, releases, or review decisions only when the user explicitly asks
+for that external update. Never create duplicate work items merely to record a
+local LGK-Vector task. When writing an approved update, distinguish ECUC edits
+from generated output and include the exact validation outcome; if a gate is
+pending or failed, state it rather than advancing the issue as complete.
+
 ## Mandatory ECUC workflow
 
 1. Record the target repository's Git status before generation or edits.
@@ -39,9 +62,13 @@ to install, configure, call, troubleshoot, or maintain LGK-Vector.
 4. Generate only the affected module unless full generation is explicitly
    required. `generate_code` and `auto_solve_errors` must name a module;
    `module:"all"` is accepted only as an explicit opt-in.
-5. Report ECUC configuration changes separately from generated C/H/LSL output.
-6. Preserve unrelated user changes and stage only task files.
-7. End every resident-host session with `shutdown_host`.
+5. Before synchronization or handoff, run `verify_delivery` against the actual
+   compile-project files. Require `passed:true`; use `same_as` for exact generated
+   file synchronization and `must_contain`/`must_not_contain` for task-specific
+   assertions.
+6. Report ECUC configuration changes separately from generated C/H/LSL output.
+7. Preserve unrelated user changes and stage only task files.
+8. End every resident-host session with `shutdown_host`.
 
 ## Three-minute rule for ordinary changes
 
@@ -72,6 +99,27 @@ For a CAN0/CAN1 switch, inspect and change this chain in order:
 5. Generate `CanTrcv`, then only the affected integration modules. Verify the
    active generated C/H files and build exclusions; do not run full generation.
 
+### Validation gate after every generation
+
+Treat an LGK `generation completed` response as provisional. Immediately read
+the newest DaVinci Generation Report and require all of the following before
+calling generation successful, synchronizing generated files, committing, or
+reporting completion:
+
+- Validation has zero errors.
+- The requested module has `Execution Result: SUCCESS` and its `GENERATION`
+  phase is successful.
+- The report does not say that the generator was not started because the
+  configuration contains errors.
+
+If a driver implementation is replaced (for example TJA1043 to TJA1040),
+inspect the target BSW Internal Behavior before retaining or rewriting the
+`RteBswModuleInstance`. If the target provides no matching internal behavior,
+timing event, or exclusive area, remove the stale RTE mapping only after
+confirming its exact container and determine the supported scheduling path.
+Never infer success from a wrapper response while DaVinci reports a validation
+failure.
+
 ### Controller replacement checklist
 
 For a CAN1-to-CAN0 (or inverse) replacement, treat these as one atomic change:
@@ -88,6 +136,91 @@ For a CAN1-to-CAN0 (or inverse) replacement, treat these as one atomic change:
   network**, not a secondary/inter-ECU network. CommunicationAllowed alone is
   insufficient; without the matching `ComM_RequestComMode(...FULL...)`, all
   application frames can remain silent.
+
+### Mandatory CAN0 handoff checks
+
+Before generating or committing a CAN1-to-CAN0 change, record the target
+`Can` controller base address, `CanSRC`, RX input selection, ISR name, and the
+physical transceiver part/pins from the schematic. Do not change the displayed
+node name alone.
+
+Treat the physical node and RX input multiplexer as independent settings. Never
+derive `CanIOPort`/RXSEL from `Node0` or `Node1`; select the value documented for
+the actual RX pin. For the TC275 CAN0 path on P20.7/P20.8, verify all of these
+together: `Node0`, base `0xF0018200`, P20.7 `RXDCAN0B` with RXSEL/`CanIOPort`
+`b_001`, and P20.8 push-pull alternate output 5 (`TXDCAN0`). If the TJA1040 uses
+P20.6 as active-low NEN/STB, configure P20.6 as GPIO push-pull output with a low
+initial level. Inspect the generated `Can_InitPortSel` and `Port_PBCfg.c`; a
+correct controller with GPIO-input TX or input-mode transceiver enable produces
+a silent physical bus even when generation, compilation, and flashing succeed.
+
+For the reproducible TC275/TJA1040 conversion, read
+[the TC275 CAN1-to-CAN0 five-minute runbook](references/tc275-can1-to-can0-5min.md)
+before editing. It is a low-freedom procedure: use it only when the project and
+schematic match the stated controller, pins, and transceiver.
+
+After a transceiver BSWMD replacement, run one `update_project`, then inspect
+the refreshed `CanTrcv` and `Rte` containers. Project Update can recreate the
+target BSW Internal Behavior and an RTE event mapping while leaving its OS task,
+alarm, and event references empty. Reuse the proven prior period/task only when
+the target timing event has the same period; otherwise obtain the scheduling
+decision instead of guessing.
+
+Before handoff, search the active compiled RTE sources for the target
+`CanTrcv_*_MainFunction()` call and for absence of the old transceiver symbol.
+An error-free report without that call does not prove wake-up polling runs.
+When Project Update changes `FlatExtract`, `.dpa`, DBC-derived content, or logs,
+review and stage them separately; never commit those by default with the CAN
+repair.
+
+Treat `Os` and `vLinkGen` as directly affected whenever the controller ISR name
+changes. Generate both after `Can`; require `Os_Isr_Lcfg.c` to define the same
+`CanIsr_*` name used by `Can_Lcfg.c`, with no old ISR name left. `CanSRC` is a
+CAN-driver selection, not necessarily the OS interrupt-source number: obtain
+the latter from a validated matching derivative configuration, and ensure the
+target ISR is assigned to an OS Application and stack before generation.
+
+Treat `CanIf` as directly affected whenever the transceiver implementation
+changes. Regenerate it and require the active `CanIf_Cfg.h` callback macro to
+match the target driver (for example `CanIf_30_Tja1040_TrcvModeIndication`).
+Run an incremental compile/link before handoff. If the make rules omit header
+dependencies, remove only the stale, regenerable target driver object and
+rebuild; never patch the driver source or generated callback macro by hand.
+
+### CAN replacement commit and build gate
+
+For a CAN1-to-CAN0 replacement, do **not** synchronize generated output, commit,
+or report completion until one checklist record proves all of the following:
+
+1. The affected modules have been generated: `Can`, `CanTrcv`, `CanIf`, `Os`,
+   `vLinkGen`, and `Rte`.
+2. Each latest DaVinci generation report has zero errors and marks its requested
+   module as successful.
+3. The compiled GenData is consistent: `Can_Lcfg.c` uses `Node0` and `CanIsr_0`,
+   the target `CanIf` callback is present, and the target transceiver main
+   function is scheduled.
+4. One serialized incremental build has exited successfully; afterwards, the
+   generated ELF/HEX/MAP files have fresh timestamps and the MAP contains no
+   stale CAN1 or old-transceiver symbols.
+
+If any check fails, do not commit a partial implementation. Fix the corresponding
+ECUC integration module, then regenerate only that module and repeat the exact
+build validation.
+
+When launching a build outside the IDE, capture and wait for the owned
+`amk`/`ctc`/`cctc` process tree to exit. Never start another build while one is
+still active, and never infer success from partial console output.
+
+When the transceiver driver package changes, treat the TASKING/CDT project
+metadata as part of the atomic replacement. In `.cproject`, replace the old
+driver and `mak` include paths and exclude both the old driver source directory
+and its stale generated `CanTrcv_*_Cfg.c` from source discovery. Save and close
+the IDE project before editing `.cproject`; an open IDE can overwrite an
+external edit from its in-memory model. Regenerate the Debug makefiles from the
+updated project metadata and run a serialized clean build. A successful build
+against pre-existing or manually repaired Debug makefiles does not prove that
+the IDE project is synchronized. Verify the new driver/config compile once,
+the old driver/config compile zero times, and then inspect the linked MAP.
 
 ### Zero-traffic acceptance gate
 
@@ -130,6 +263,17 @@ Avoid these previously observed mistakes:
   area. Remove obsolete mappings when it does not.
 - Update EcuC initialization entries and BswM/EcuM user callouts when a driver
   implementation name changes. Search generated output for the old symbol.
+  Treat preserved user-code regions such as `EcuM_Callout_Stubs.c` as source
+  inputs: replace the API, channel macro, and every operation-mode macro with
+  symbols verified in the target driver headers, regenerate `EcuM`, and confirm
+  the user-code edit survives before synchronizing it to the compile project.
+- Synchronize only outputs of modules changed for the current task. Never copy
+  unrelated MCAL output from a full-generation run into the compile project.
+  Before copying `Dio`, `Port`, `Mcu`, `Icu`, or `Gtm` output, prove that module
+  is affected and diff it against Git; otherwise preserve the compile baseline.
+  If an unrelated sync removes a business-code symbol such as a DIO channel,
+  restore only those known generated files and rebuild—do not patch the
+  dependent application/CDD source to hide the mismatch.
 - Do not trust an old generation report or a resident DaVinci model after an
   ARXML edit. Restart once, generate once, and read the newest report timestamp.
 - Do not conflate an `ELF` that links with a bus that transmits. Link success
@@ -153,9 +297,29 @@ Avoid these previously observed mistakes:
 
 Supported functions are `inspect_ecuc_containers`, `find_module`,
 `find_module_template`, `get_param_definition`, `locate_container`,
-`edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
+`verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
 `update_project`, `import_dbc`, and `shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
 accepted.
+
+`verify_delivery` is a local read-only gate. Pass an absolute `root` that
+contains the configured DaVinci Cfg directory, then use root-relative `path`
+and optional `same_as` values. It compares exact file bytes and checks exact
+required/forbidden byte strings. Enforcement defaults to true, so a missing,
+stale, or invalid compiled file makes the request fail; use `enforce:false`
+only to retrieve diagnostic JSON, never as acceptance evidence.
+
+```json
+{
+  "func": "verify_delivery",
+  "root": "D:\\Work\\Vehicle",
+  "checks": [{
+    "path": "Proj_Code\\_01_BSW\\Gen\\GenData\\Can_Lcfg.c",
+    "same_as": "Proj_Config\\Bsw_Config\\Gen\\GenData\\Can_Lcfg.c",
+    "must_contain": ["CanIsr_0", "0xF0018200u"],
+    "must_not_contain": ["CanIsr_1"]
+  }]
+}
+```
 
 `find_module_template` is compact by default: it returns container hierarchy
 and direct parameter/reference names, not every description and range. Query

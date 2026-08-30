@@ -1,6 +1,134 @@
 # LGK-Vector 更新记录
 
-## Unreleased - 2026-08-15
+版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
+
+## v0.3.7 - 2026-08-29
+
+- Core: the resident Host is now spawned through `CreateProcessW` with
+  `bInheritHandles=FALSE`, `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`, and
+  explicit empty standard streams. Rust's `Command` spawn cannot disable
+  handle inheritance, so every inheritable pipe in the caller chain
+  (PowerShell capture pipes, bash/MSYS pipelines, .NET redirection pipes)
+  also entered the never-exiting Host, and the caller's pipeline then stayed
+  open forever after all foreground processes had exited. This reproduced as
+  a silent indefinite hang with zero output when the wrapper ran from a
+  backgrounded Git Bash pipeline on a real TC275 project (2026-08-29). The
+  v0.3.0 mitigation only cleared the CLI's own three standard handles and
+  could not cover these outer inheritance sources. Implementation commit:
+  `530a744`.
+- Wrapper: every CLI invocation in `Invoke-LGKVector.ps1` now runs under a
+  hard watchdog (`--version` 15s, `--start-host` 60s, doctor 90s, request
+  185s). On timeout the child process tree is terminated and the captured
+  partial output is reported, so a wedged CLI can no longer hang the
+  caller's shell or an agent pipeline indefinitely. The wrapper now invokes
+  the CLI through .NET redirection with an explicit working directory and
+  still exports the CLI exit code through `$LASTEXITCODE` for callers such
+  as the initializer; output and error message formats are unchanged.
+- Tests: the onboarding suite gained a pipe-topology regression probe. It
+  runs the first real wrapper request through a redirected child PowerShell
+  and requires both process exit and stdout EOF within a budget; the
+  pre-fix binary fails this probe while the fixed binary completes in
+  seconds. The Rust suite gained `CreateProcessW` command-line quoting tests.
+- Tooling: maintainer scripts are now Windows PowerShell 5.1 safe on Chinese
+  Windows. `Build-LGKVector.ps1` and the onboarding suite carry a UTF-8 BOM
+  so their Chinese text no longer breaks parsing or degrades into mojibake
+  fixture paths; the onboarding temporary fixture therefore exercises real
+  Chinese-and-space paths again. `Sync-LGKVectorPackage.ps1` and
+  `Invoke-PackageManifestSmoke.ps1` now read Git path output with a UTF-8
+  console encoding (restored afterwards), because `git ls-files` emits raw
+  UTF-8 bytes that PS 5.1 otherwise decodes as ANSI, silently dropping
+  Chinese-named files from manifests and fixtures.
+- Validation: 33 Rust tests passed (31 previous plus 2 new); the onboarding
+  suite passed 50 assertions including the pipe regression probe and the
+  packaged-binary path; the dependency-license guard and the package
+  manifest smoke (13 assertions) passed on the local Chinese-Windows
+  PowerShell 5.1 machine; `Build-LGKVector.ps1` ran end to end under
+  PowerShell 5.1. The exact incident topology (backgrounded bash pipeline
+  plus a fresh Host spawn) completed in 5 seconds on the fixed build versus
+  an indefinite hang before, and a real TC275 read-only request followed by
+  `shutdown_host` then verified end to end with both ports released.
+- Build: release CLI and Host both report `0.3.7`, protocol 2, rebuilt with
+  the project-private offline GNU toolchain. The private toolchain still
+  lacks rustfmt/clippy, so formatting was reviewed manually; compilation and
+  all executable tests passed.
+- Limitations: `Invoke-OpenSourceGuard.ps1 -IncludeHistory` still rejects the
+  private development history, as documented since v0.3.0.
+
+## v0.3.6 - 2026-08-16
+
+- Core: add the generic read-only `verify_delivery` request. It checks actual
+  compiled files against generated sources with exact byte comparison, enforces
+  required/forbidden text assertions, and fails closed by default when a file
+  is missing, stale, or invalid. Implementation commit: `438fef9`.
+- Safety: require one declared absolute project root that contains the configured
+  DaVinci Cfg directory; accept only root-relative file paths, reject `..`, drive
+  prefixes, and link escapes, limit checks/patterns/file size, and never return
+  inspected file contents.
+- Validation: 31 Rust tests passed; the onboarding suite passed 48 assertions;
+  the packaged EXE suite passed 11 assertions; public-content, 13-item package,
+  and 34-dependency license guards passed. A real TC275 read-only request proved
+  both `Can_Lcfg.c` and `Port_PBCfg.c` synchronized into the compile project and
+  confirmed the required CAN0 symbols, then `shutdown_host` released the Host.
+- Build: release CLI and Host both report `0.3.6`, protocol 2, and were rebuilt
+  with the project-private offline GNU toolchain. The private toolchain lacks
+  the optional `rustfmt` component, so format validation was manual; compilation
+  and all executable tests passed. No public tag or GitHub release was created.
+
+- Skill: add a detailed, low-freedom five-minute runbook for the proven TC275
+  CAN1-to-CAN0/TJA1040 conversion. It separates DaVinci `Can` ECUC edits from
+  EB tresos `Port.xdm` generation, records the actual P20.6/P20.7/P20.8 mapping,
+  synchronizes only compiled outputs, and requires generated-value assertions
+  before handoff or Git commit.
+- Validation: the runbook is based on the repaired TC275 configuration where
+  `Can_InitPortSel=1`, P20.6 is GPIO output-low, P20.8 is ALT5 output, and the
+  user confirmed normal bus traffic after generation and synchronization.
+
+- Skill: make the physical pin mux and receive selector mandatory in a CAN0
+  handoff. It now forbids deriving RXSEL/`CanIOPort` from the node number and
+  records the proven TC275 CAN0 mapping: Node0/base `0xF0018200`, P20.7
+  `RXDCAN0B` with `b_001`, P20.8 `TXDCAN0` on push-pull ALT5, and active-low
+  TJA1040 NEN/STB on P20.6 as GPIO output low.
+- Validation: the compiled `Port_PBCfg.c` had P20.6 and P20.8 as GPIO inputs and
+  `Can_InitPortSel` was 0, which produced a completely silent bus despite a
+  successful build. Targeted Port and Can generation produced P20.6 output,
+  P20.8 ALT5, and `Can_InitPortSel=1`; both generators reported zero errors.
+
+- Skill: add a non-bypassable CAN0 commit/build gate after an incomplete CAN0
+  handoff. It requires successful Can/CanTrcv/CanIf/Os/vLinkGen/Rte generation
+  evidence plus one serialized incremental build and fresh ELF/HEX/MAP
+  verification before synchronization, commit, or completion reporting. It
+  explicitly forbids concurrent/restarted builds and interpreting partial build
+  output as success.
+- Validation: the real TC275 sequence initially exposed a missing `CanIsr_0`
+  definition and a stale TJA1040 CanIf callback after premature handoff. After
+  correcting the Os/vLinkGen/CanIf generation and synchronization, a single
+  rebuild produced fresh ELF/HEX/MAP files with `CanIsr_0` and TJA1040 symbols
+  and without `CanIsr_1` or TJA1043 symbols.
+
+- Skill: add the required OS/vLinkGen and CanIf portions of a controller or
+  transceiver replacement. The handoff now proves the ISR name is consistently
+  generated in Can and Os, distinguishes `CanSRC` from the derivative-specific
+  OS interrupt-source number, verifies OS-Application/stack assignment, and
+  requires regeneration of the transceiver callback macro plus a real link.
+- Validation: applied to the TC275 CAN0 repair after a build exposed an
+  undefined `CanIsr_0` and then an unresolved
+  `CanIf_30_Tja1040_TrcvModeIndication`; Os, vLinkGen, and CanIf were generated
+  with zero report errors, the stale driver object was rebuilt, and the final
+  MAP contained TJA1040/CanIsr_0 with no TJA1043/CanIsr_1 symbols.
+
+- Skill: make the CAN1-to-CAN0 checklist executable at handoff. It now requires
+  recording `CanSRC` alongside controller/pin data, running Project Update once
+  after a transceiver BSWMD replacement, checking the regenerated RTE task
+  mapping, and proving the compiled RTE invokes the target transceiver main
+  function. It also requires separating Project Update side effects from the
+  CAN commit.
+- Validation: applied to a TC275 CAN1-to-CAN0/TJA1043-to-TJA1040 repair:
+  `CanSRC=1` was rejected for Node0; Project Update created the target behavior
+  but initially left its 5 ms RTE mapping incomplete; regenerated Can, CanTrcv,
+  and Rte reports each had zero errors after the target task binding was added.
+
+- Skill: generation responses are now provisional until the newest DaVinci Generation Report proves zero validation errors and a successful `GENERATION` phase; driver replacements must verify target BSW Internal Behavior before retaining RTE BSW-instance mappings.
+- Validation: reviewed against a real TJA1043-to-TJA1040 replacement where DaVinci reported `RTE01006` although the wrapper returned a completion response; skill syntax validation is pending because the bundled validator Python lacks `PyYAML`.
 
 - 新增 `scripts/Build-LGKVector.ps1` 作为中央源码仓库唯一的 EXE 构建入口：在当前进程绑定工程内私有 Rust、Rustup 与已验证的 `dlltool.exe`，默认离线构建，不改系统环境、DaVinci 或 AUTOSAR 工程；
 - 实现提交：本次变更提交（提交后以 Git 日志中的 `Reject mutating request batches in wrapper` 定位）；
@@ -8,8 +136,6 @@
 - 将 `Set-StrictMode` 与 `$ErrorActionPreference` 前移至参数声明之后；错误输出增加退出码与请求文件路径；白名单注释指向真实 Rust 注册位置；源码 Junction 安装器补充 Codex、Claude Code、OpenCode 的常见路径；发行包守卫拒绝 `.pdb`；
 - 验证：5 个受改动影响的 PowerShell 文件通过语法解析；`Invoke-PackageManifestSmoke.ps1` 13 项断言、`Invoke-OnboardingSmoke.ps1` 46 项断言、从新建 Release 目录运行的 `Run-ExeSelfTest.ps1` 11 项断言均通过；常规公开内容守卫通过，Host 端口已释放；
 - 限制：当前命令环境未发现 `cargo`，故未运行 Rust 格式、Clippy、测试、构建及依赖许可证守卫；中央维护仓库保留私有历史，`-IncludeHistory` 守卫按设计失败。本次不发布新二进制、不创建标签，公开版本仍为 `v0.3.5`。
-
-版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
 ## v0.3.5 - 2026-08-15
 
@@ -39,7 +165,7 @@
 - 发布包自检继续保留在发行包的 `test` 目录；源码的 `tests` 仍只承担 Rust、onboarding、打包与开源合规检查；
 - 验证：从新打包目录以 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File` 运行自检，11 项断言全部通过。
 
-## v0.3.0 final - 2026-08-12
+## Unreleased - 2026-08-12
 
 - 固定公开仓库地址为 `https://github.com/qudh666666-web/LGK-Vector`；发布时只推送经过审计的 clean-root 公共快照，不公开含个人邮箱和旧名称的私有开发历史；
 - 对齐既有 Vector 自动化入口的 Windows 行为：包装器固定使用 UTF-8 输入、输出和无 BOM 请求编码，中文、空格路径加入端到端回归；
@@ -51,9 +177,9 @@
 - 真实 TC275 SIP 对比：`find_module_template(CanIf)` 输出由 125895 字符降至 8574 字符；LGK 冷启动 2.55 秒、常驻 0.17–0.18 秒，对照入口冷启动 3.28 秒、常驻 0.55–0.56 秒；单模块 `CanIf` 生成两者均约 23 秒；
 - 验证：27 个 Rust 测试通过；含中文/空格目录、配置 BOM、请求 BOM、发布包和 Host 生命周期的 38 项 onboarding 连续运行 3 次全部通过；真实测试结束后 Host 正常关闭、端口释放。
 
-### Preparation history - 2026-08-11
+## v0.3.0 - 2026-08-11
 
-Release tag: `v0.3.0`
+Target release tag: `v0.3.0` (not published yet)
 
 - 将工程配置缩减为最小 `tool_path`，工程目录由 `lgk-vector.json` 所在位置推导；多 DPA 或多 DaVinci 命令时仍可显式选择；
 - 新增首次接入初始化器和非写入 doctor，并支持从任意 PowerShell 工作目录传入相对的 DPA/命令路径；

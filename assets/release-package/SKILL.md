@@ -18,8 +18,10 @@ description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修�
    一条带 `expected` 的小范围 `edit_file` 请求。
 3. 只对受影响模块调用 `generate_code`。若失败，再读取该模块的
    `get_errors_list`；不要盲目重试或全量生成。
-4. 分开汇报 ECUC 配置改动与生成的 C/H/LSL 输出。
-5. 每次会话结束都通过包装器发送 `{ "func": "shutdown_host" }`。
+4. 同步或交付前调用 `verify_delivery`，核对实际编译文件与生成文件完全一致，
+   并验证本任务要求出现或禁止出现的关键文本；必须得到 `passed:true`。
+5. 分开汇报 ECUC 配置改动与生成的 C/H/LSL 输出。
+6. 每次会话结束都通过包装器发送 `{ "func": "shutdown_host" }`。
 
 ## 必须遵守
 
@@ -31,7 +33,7 @@ description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修�
 - `import_dbc` 或 `update_project` 前，保存并关闭 DaVinci GUI。
 - 仅使用支持的函数：`inspect_ecuc_containers`、`find_module`、
   `find_module_template`、`get_param_definition`、`locate_container`、
-  `edit_file`、`get_errors_list`、`auto_solve_errors`、`generate_code`、
+  `verify_delivery`、`edit_file`、`get_errors_list`、`auto_solve_errors`、`generate_code`、
   `update_project`、`import_dbc`、`shutdown_host`。
 
 ## 示例
@@ -40,6 +42,14 @@ description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修�
 & "<skill-root>\Invoke-LGKVector.ps1" `
   -ProjectPath "D:\\Work\\Vehicle\\Cfg" `
   -Request '{"func":"inspect_ecuc_containers","module":"Com","container":"ComSignal"}'
+```
+
+交付前检查示例：
+
+```powershell
+& "<skill-root>\Invoke-LGKVector.ps1" `
+  -ProjectPath "D:\\Work\\Vehicle\\Cfg" `
+  -Request '{"func":"verify_delivery","root":"D:\\Work\\Vehicle","checks":[{"path":"Proj_Code\\Gen\\Can_Lcfg.c","same_as":"Proj_Config\\Gen\\Can_Lcfg.c","must_contain":["CanIsr_0"],"must_not_contain":["CanIsr_1"]}]}'
 ```
 
 跨 Agent 接入方式和工程工作规则见同目录的 `AGENTS.md`。

@@ -1,4 +1,4 @@
-# LGK-Vector 源码维护者的唯一构建入口。
+﻿# LGK-Vector 源码维护者的唯一构建入口。
 # 它只修改当前 PowerShell 进程的环境变量，输出只落在 target\release，
 # 不安装或修改系统 Rust、MSYS2、DaVinci、SIP 和 AUTOSAR 工程。
 [CmdletBinding()]

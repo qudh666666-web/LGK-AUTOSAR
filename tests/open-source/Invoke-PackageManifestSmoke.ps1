@@ -33,7 +33,17 @@ try {
     # available to exercise a second package operation.
     $fixture = Join-Path $temporaryRoot 'fixture-repository'
     New-Item -ItemType Directory -Path $fixture -Force | Out-Null
-    $sourceManifest = @(& git -C $repository -c core.quotepath=false ls-files --cached --others --exclude-standard)
+    # git emits repository paths as raw UTF-8 bytes. Windows PowerShell 5.1
+    # otherwise decodes native command output with the ANSI code page, turning
+    # Chinese filenames into paths that never match the working tree and
+    # silently dropping whole directories from the fixture.
+    $previousConsoleEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    try {
+        $sourceManifest = @(& git -C $repository -c core.quotepath=false ls-files --cached --others --exclude-standard)
+    } finally {
+        [Console]::OutputEncoding = $previousConsoleEncoding
+    }
     foreach ($relative in $sourceManifest) {
         $sourceFile = Join-Path $repository $relative
         if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) {
@@ -59,7 +69,12 @@ try {
     [System.IO.File]::WriteAllText($ignoredDbc, 'must never enter a release archive')
     [System.IO.File]::WriteAllText($ignoredArxml, 'must never enter a release archive')
 
-    $candidateFiles = @(& git -C $fixture -c core.quotepath=false ls-files --cached --others --exclude-standard)
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    try {
+        $candidateFiles = @(& git -C $fixture -c core.quotepath=false ls-files --cached --others --exclude-standard)
+    } finally {
+        [Console]::OutputEncoding = $previousConsoleEncoding
+    }
     Assert-True ($candidateFiles -notcontains 'docs/CustomerSecret.dbc') 'ignored DBC must be absent from the Git release manifest'
     Assert-True ($candidateFiles -notcontains 'assets/CustomerSecret.arxml') 'ignored ARXML must be absent from the Git release manifest'
 

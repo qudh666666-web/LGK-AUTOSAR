@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter()]
     [string]$RepositoryRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
@@ -121,7 +121,7 @@ try {
     Assert-True ($doctor.valid -eq $true) 'initializer doctor must report valid=true'
     Assert-True ($doctor.preflight -eq 'static') 'doctor must label itself as a static preflight'
     Assert-True ($doctor.davinci_executed -eq $false) 'doctor must not claim that DaVinci was executed'
-    Assert-True ($doctor.version -eq '0.3.5') 'initializer must use the current release binary'
+    Assert-True ($doctor.version -eq '0.3.7') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
     $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
@@ -161,6 +161,51 @@ try {
     }
     Assert-True (-not (Test-HostPort -Port 32483) -and -not (Test-HostPort -Port 32484)) 'wrapper must reject a mutating batch before starting a Host'
 
+    # Regression (2026-08-29 incident): the resident Host must not inherit the
+    # caller's output pipe. A backgrounded bash/MSYS pipeline used to stay open
+    # after every foreground process had exited because the freshly spawned
+    # Host kept the pipe write end. This probe reproduces that topology with a
+    # redirected child PowerShell and requires both process exit and stdout
+    # EOF within the budget; the pre-fix binary fails this test.
+    $probeScriptPath = Join-Path $temporaryRoot 'pipe-regression.ps1'
+    # The probe script itself stays pure ASCII and receives every path as a
+    # command-line argument: Windows passes arguments as UTF-16, so non-ASCII
+    # project paths survive regardless of how either PowerShell edition
+    # decodes script files.
+    Write-Utf8 -Path $probeScriptPath -Content @'
+param(
+    [Parameter(Mandatory)][string]$WrapperPath,
+    [Parameter(Mandatory)][string]$ProjectPath,
+    [Parameter(Mandatory)][string]$ExecutablePath
+)
+$ErrorActionPreference = 'Stop'
+& $WrapperPath -ProjectPath $ProjectPath -ExecutablePath $ExecutablePath -Request '{"func":"find_module","module":"Com"}'
+'@
+    $probeInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $probeInfo.FileName = 'powershell.exe'
+    $probeInfo.Arguments = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -WrapperPath "{1}" -ProjectPath "{2}" -ExecutablePath "{3}"' -f $probeScriptPath, $wrapper, $project, $executable)
+    $probeInfo.UseShellExecute = $false
+    $probeInfo.RedirectStandardOutput = $true
+    $probeInfo.RedirectStandardError = $true
+    $probeInfo.CreateNoWindow = $true
+    $probeInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $probeInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $probeWatch = [Diagnostics.Stopwatch]::StartNew()
+    $probe = [System.Diagnostics.Process]::Start($probeInfo)
+    $hostStarted = $true
+    $probeOutputTask = $probe.StandardOutput.ReadToEndAsync()
+    if (-not $probe.WaitForExit(60000)) {
+        $probe.Kill()
+        throw 'pipe regression: wrapper did not exit within 60 seconds through a piped child'
+    }
+    if (-not $probeOutputTask.Wait(15000)) {
+        throw 'pipe regression: caller stdout pipe stayed open after the wrapper exited; the resident Host still inherits caller handles'
+    }
+    $probeWatch.Stop()
+    $probeModule = (($probeOutputTask.Result | Out-String) | ConvertFrom-Json)
+    Assert-True ($probeModule.definition_ref -eq '/PublicStack/Com') 'pipe regression: piped wrapper request must return the fixture definition ref'
+    Assert-True ($probeWatch.Elapsed.TotalSeconds -lt 30) 'pipe regression: cold piped request must stay well under 30 seconds'
+
     $localWatch = [Diagnostics.Stopwatch]::StartNew()
     $hostStarted = $true
     $moduleOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"find_module","module":"Com","note":"中文路径与 UTF-8"}')
@@ -178,6 +223,25 @@ try {
     $inspect = (($inspectOutput | Out-String) | ConvertFrom-Json)
     Assert-True (@($inspect).Count -eq 1) 'inspect must return one configured signal'
     Assert-True ([string]$inspect.values.ComBitPosition -eq '8') 'inspect must return ComBitPosition=8'
+
+    $generatedDelivery = Join-Path $temporaryRoot 'Generated\Com_Cfg.h'
+    $compiledDelivery = Join-Path $temporaryRoot 'Proj_Code\Com_Cfg.h'
+    Write-Utf8 -Path $generatedDelivery -Content '#define COM_CONFIG_VALUE 8'
+    Write-Utf8 -Path $compiledDelivery -Content '#define COM_CONFIG_VALUE 8'
+    $deliveryRequest = [ordered]@{
+        func = 'verify_delivery'
+        root = $temporaryRoot
+        checks = @([ordered]@{
+            path = 'Proj_Code\Com_Cfg.h'
+            same_as = 'Generated\Com_Cfg.h'
+            must_contain = @('COM_CONFIG_VALUE 8')
+            must_not_contain = @('COM_CONFIG_VALUE 7')
+        })
+    } | ConvertTo-Json -Compress -Depth 5
+    $deliveryOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request $deliveryRequest)
+    $delivery = (($deliveryOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($delivery.passed -eq $true) 'verify_delivery must accept synchronized generated output'
+    Assert-True ($delivery.checks[0].synchronized -eq $true) 'verify_delivery must compare generated and compiled files'
 
     $bomRequest = Join-Path $temporaryRoot 'request-with-bom.json'
     $bomEncoding = [System.Text.UTF8Encoding]::new($true)
@@ -263,7 +327,7 @@ try {
     $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKVector.ps1'
     $packageDoctorOutput = @(& $packageInitializer -ProjectPath $packageProject -ToolPath $tool)
     $packageDoctor = (($packageDoctorOutput | Out-String) | ConvertFrom-Json)
-    Assert-True ($packageDoctor.version -eq '0.3.5') 'packaged initializer must use packaged binaries by default'
+    Assert-True ($packageDoctor.version -eq '0.3.7') 'packaged initializer must use packaged binaries by default'
 
     $activeWrapper = $packageWrapper
     $activeProject = $packageProject

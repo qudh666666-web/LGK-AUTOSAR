@@ -95,11 +95,13 @@ lgk-vector.exe '{"func":"find_module","module":"Com"}'
 
 The supplied PowerShell wrapper performs the host-start step automatically. Prefer it for automation and AI-tool integration.
 
-Supported functions are `inspect_ecuc_containers`, `find_module`, `find_module_template`, `get_param_definition`, `locate_container`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`, `update_project`, `import_dbc`, and `shutdown_host`. For existing automation, `find_bsw_module`, `get_bsw_module_template`, and `get_bsw_param_definition` remain accepted aliases.
+Supported functions are `inspect_ecuc_containers`, `find_module`, `find_module_template`, `get_param_definition`, `locate_container`, `verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`, `update_project`, `import_dbc`, and `shutdown_host`. For existing automation, `find_bsw_module`, `get_bsw_module_template`, and `get_bsw_param_definition` remain accepted aliases.
 
 `inspect_ecuc_containers` reads saved ECUC ARXML locally and does not start DaVinci. It can therefore inspect a project while the GUI holds the `.dpa` lock. Multiple inspection requests in one array return one flat result array; do not mix inspection requests with other functions in the same batch.
 
 `find_module_template` returns a compact container tree by default so large SIPs do not flood an agent context. It includes each container's direct parameter/reference names. Use `get_param_definition` for exact metadata, or pass `"details":true` only when a maintainer genuinely needs the complete flattened definition list. Resident queries cache the parsed template and invalidate that entry when the source ARXML changes.
+
+`verify_delivery` is a read-only handoff gate for generated projects. Give it an absolute project `root` containing the configured Cfg directory and root-relative checks. Each check names the compiled `path`, may name a generated `same_as` file for exact byte comparison, and may list exact `must_contain` and `must_not_contain` strings. Enforcement defaults to true: missing, unsynchronized, or assertion-failing files make the request fail. Use `"enforce":false` only when diagnostic JSON is required.
 
 Multi-item request arrays are read-only. Send `edit_file`, `auto_solve_errors`, `generate_code`, `update_project`, `import_dbc`, and `shutdown_host` as standalone requests so a later failure cannot leave an earlier mutation half-applied.
 
