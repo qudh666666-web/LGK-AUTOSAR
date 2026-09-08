@@ -153,11 +153,9 @@ fn finds_module_and_definition() {
         "ECUC-NUMERICAL-PARAM-VALUE"
     );
 
-    let template = ops::find_module_template::execute(
-        &config,
-        &json!({"module": "Com", "details": true}),
-    )
-        .expect("find module template");
+    let template =
+        ops::find_module_template::execute(&config, &json!({"module": "Com", "details": true}))
+            .expect("find module template");
     let definitions = template["definitions"].as_array().expect("definitions");
     let container = definitions
         .iter()
@@ -432,7 +430,9 @@ fn confines_delivery_verification_to_the_declared_project_root() {
         }),
     )
     .expect_err("relative path traversal must be rejected");
-    assert!(traversal_error.to_string().contains("cannot contain parent"));
+    assert!(traversal_error
+        .to_string()
+        .contains("cannot contain parent"));
 }
 
 #[test]

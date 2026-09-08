@@ -16,11 +16,9 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     if !requested_root.is_absolute() {
         bail!("root must be an absolute project directory");
     }
-    let root = normalize_canonical_path(
-        requested_root
-            .canonicalize()
-            .with_context(|| format!("verification root not found: {}", requested_root.display()))?,
-    );
+    let root = normalize_canonical_path(requested_root.canonicalize().with_context(|| {
+        format!("verification root not found: {}", requested_root.display())
+    })?);
     if !root.is_dir() {
         bail!("verification root is not a directory: {}", root.display());
     }
@@ -93,14 +91,12 @@ fn verify_one(root: &Path, check: &Value) -> Result<Value> {
         .flatten();
     let exists = content.is_some();
     let same_as_exists = same_as_path.as_ref().map(|_| comparison.is_some());
-    let synchronized = same_as_path
-        .as_ref()
-        .map(|_| {
-            content
-                .as_ref()
-                .zip(comparison.as_ref())
-                .is_some_and(|(left, right)| left == right)
-        });
+    let synchronized = same_as_path.as_ref().map(|_| {
+        content
+            .as_ref()
+            .zip(comparison.as_ref())
+            .is_some_and(|(left, right)| left == right)
+    });
 
     let missing_required = required
         .iter()
@@ -142,9 +138,10 @@ fn resolve_relative_file(root: &Path, value: &str) -> Result<PathBuf> {
     if relative.is_absolute() || value.trim().is_empty() {
         bail!("verification paths must be non-empty paths relative to root: {value}");
     }
-    if relative.components().any(|component| {
-        !matches!(component, Component::Normal(_) | Component::CurDir)
-    }) {
+    if relative
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+    {
         bail!("verification paths cannot contain parent, root, or prefix components: {value}");
     }
     let joined = root.join(relative);
@@ -166,7 +163,9 @@ fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error).with_context(|| format!("cannot inspect {}", path.display())),
+        Err(error) => {
+            return Err(error).with_context(|| format!("cannot inspect {}", path.display()))
+        }
     };
     if !metadata.is_file() {
         bail!("verification path is not a file: {}", path.display());
