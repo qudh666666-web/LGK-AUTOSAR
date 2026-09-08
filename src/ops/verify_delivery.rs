@@ -16,9 +16,10 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     if !requested_root.is_absolute() {
         bail!("root must be an absolute project directory");
     }
-    let root = normalize_canonical_path(requested_root.canonicalize().with_context(|| {
-        format!("verification root not found: {}", requested_root.display())
-    })?);
+    let root =
+        normalize_canonical_path(requested_root.canonicalize().with_context(|| {
+            format!("verification root not found: {}", requested_root.display())
+        })?);
     if !root.is_dir() {
         bail!("verification root is not a directory: {}", root.display());
     }
