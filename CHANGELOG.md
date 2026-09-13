@@ -1,6 +1,23 @@
-# LGK-Vector 更新记录
+# LGK-AUTOSAR 更新记录
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
+
+## v0.4.0 - 2026-09-13
+
+- Implementation commit: `a4b187b`. Renamed the complete product from
+  LGK-Vector to LGK-AUTOSAR: Cargo package/library, CLI and Host binaries,
+  DaVinci adapter task, PowerShell entry points, Skill identity and folder,
+  project configuration, pair manifest, documentation and release packaging.
+- New projects use `lgk-autosar.json`; the runtime still reads an existing
+  `lgk-vector.json` as a migration fallback. New binaries and scripts use only
+  the LGK-AUTOSAR names, so mixed old/new executable pairs are rejected.
+- Version moved to 0.4.0 because executable, script, crate, Skill and package
+  names changed. The GitHub repository and cloud release assets are renamed in
+  the same release.
+- Verified: 58 Rust tests passed and one optional private-report test was
+  ignored; release CLI/Host both report 0.4.0; Clippy `-D warnings`, public
+  content guard, package manifest (13 assertions) and onboarding (62 checks)
+  passed before publication.
 
 ## v0.3.12 - 2026-09-13
 
@@ -105,7 +122,7 @@
   Normal successful responses and dependency versions are unchanged.
 - Verified: 43 Rust tests passed (one optional private-report test skipped),
   Clippy -D warnings, changed-file formatting and git diff checks passed;
-  Build-LGKVector.ps1 rebuilt local v0.3.9 CLI/Host; 56 onboarding assertions
+  Build-LGKAutosar.ps1 rebuilt local v0.3.9 CLI/Host; 56 onboarding assertions
   prove JSON details survive the Host/CLI/wrapper and failures still fail;
   13 package assertions and current-content guard passed.
 - Limits: no live DaVinci generation or LLM-token benchmark was performed.
@@ -134,7 +151,7 @@
   reports and correctly accepted success/rejected validation error. Debug
   parser timings were approximately 10/27 ms, excluding generation and report
   discovery. Clippy -D warnings and rustfmt checks passed using already installed
-  private components. Release build passed via Build-LGKVector.ps1; onboarding
+  private components. Release build passed via Build-LGKAutosar.ps1; onboarding
   51 assertions, package manifest 13 assertions and current-content guard passed.
 - Limits: no live DaVinci generation was run and no customer project was changed.
   Report compatibility is based on the locally inspected HTML layout and
@@ -155,7 +172,7 @@
   v0.3.0 mitigation only cleared the CLI's own three standard handles and
   could not cover these outer inheritance sources. Implementation commit:
   `530a744`.
-- Wrapper: every CLI invocation in `Invoke-LGKVector.ps1` now runs under a
+- Wrapper: every CLI invocation in `Invoke-LGKAutosar.ps1` now runs under a
   hard watchdog (`--version` 15s, `--start-host` 60s, doctor 90s, request
   185s). On timeout the child process tree is terminated and the captured
   partial output is reported, so a wedged CLI can no longer hang the
@@ -169,10 +186,10 @@
   pre-fix binary fails this probe while the fixed binary completes in
   seconds. The Rust suite gained `CreateProcessW` command-line quoting tests.
 - Tooling: maintainer scripts are now Windows PowerShell 5.1 safe on Chinese
-  Windows. `Build-LGKVector.ps1` and the onboarding suite carry a UTF-8 BOM
+  Windows. `Build-LGKAutosar.ps1` and the onboarding suite carry a UTF-8 BOM
   so their Chinese text no longer breaks parsing or degrades into mojibake
   fixture paths; the onboarding temporary fixture therefore exercises real
-  Chinese-and-space paths again. `Sync-LGKVectorPackage.ps1` and
+  Chinese-and-space paths again. `Sync-LGKAutosarPackage.ps1` and
   `Invoke-PackageManifestSmoke.ps1` now read Git path output with a UTF-8
   console encoding (restored afterwards), because `git ls-files` emits raw
   UTF-8 bytes that PS 5.1 otherwise decodes as ANSI, silently dropping
@@ -181,7 +198,7 @@
   suite passed 50 assertions including the pipe regression probe and the
   packaged-binary path; the dependency-license guard and the package
   manifest smoke (13 assertions) passed on the local Chinese-Windows
-  PowerShell 5.1 machine; `Build-LGKVector.ps1` ran end to end under
+  PowerShell 5.1 machine; `Build-LGKAutosar.ps1` ran end to end under
   PowerShell 5.1. The exact incident topology (backgrounded bash pipeline
   plus a fresh Host spawn) completed in 5 seconds on the fixed build versus
   an indefinite hang before, and a real TC275 read-only request followed by
@@ -269,7 +286,7 @@
 - Skill: generation responses are now provisional until the newest DaVinci Generation Report proves zero validation errors and a successful `GENERATION` phase; driver replacements must verify target BSW Internal Behavior before retaining RTE BSW-instance mappings.
 - Validation: reviewed against a real TJA1043-to-TJA1040 replacement where DaVinci reported `RTE01006` although the wrapper returned a completion response; skill syntax validation is pending because the bundled validator Python lacks `PyYAML`.
 
-- 新增 `scripts/Build-LGKVector.ps1` 作为中央源码仓库唯一的 EXE 构建入口：在当前进程绑定工程内私有 Rust、Rustup 与已验证的 `dlltool.exe`，默认离线构建，不改系统环境、DaVinci 或 AUTOSAR 工程；
+- 新增 `scripts/Build-LGKAutosar.ps1` 作为中央源码仓库唯一的 EXE 构建入口：在当前进程绑定工程内私有 Rust、Rustup 与已验证的 `dlltool.exe`，默认离线构建，不改系统环境、DaVinci 或 AUTOSAR 工程；
 - 实现提交：本次变更提交（提交后以 Git 日志中的 `Reject mutating request batches in wrapper` 定位）；
 - 包装器在启动 Host 前拒绝多项数组中的 `edit_file`、`auto_solve_errors`、`generate_code`、`update_project`、`import_dbc` 与 `shutdown_host`，使其与既有 Rust 调度约束一致；
 - 将 `Set-StrictMode` 与 `$ErrorActionPreference` 前移至参数声明之后；错误输出增加退出码与请求文件路径；白名单注释指向真实 Rust 注册位置；源码 Junction 安装器补充 Codex、Claude Code、OpenCode 的常见路径；发行包守卫拒绝 `.pdb`；
@@ -288,9 +305,9 @@
 
 ## v0.3.3 - 2026-08-15
 
-- GitHub Release 改为极简 `LGK-Vector-skill` 包：根目录仅保留安装说明、许可证、`lgk-vector/` 运行时和 `test/`；不再分发 Rust 源码、CI、开发测试、维护文档或 Git 元数据；
+- GitHub Release 改为极简 `LGK-AUTOSAR-skill` 包：根目录仅保留安装说明、许可证、`lgk-autosar/` 运行时和 `test/`；不再分发 Rust 源码、CI、开发测试、维护文档或 Git 元数据；
 - 运行时目录采用可复制技能结构，内含 CLI/Host、PowerShell 包装器、初始化器、简版 `SKILL.md` 和 `AGENTS.md`；README 明确列出 Codex、OpenCode、Claude Code 的项目级与全局安装位置；
-- 自检和 onboarding 改为从 `lgk-vector/` 启动实际 EXE/Host，打包守卫断言源码、长文档和 CI 不会进入 Release。
+- 自检和 onboarding 改为从 `lgk-autosar/` 启动实际 EXE/Host，打包守卫断言源码、长文档和 CI 不会进入 Release。
 
 ## v0.3.2 - 2026-08-15
 
@@ -306,7 +323,7 @@
 
 ## Unreleased - 2026-08-12
 
-- 固定公开仓库地址为 `https://github.com/qudh666666-web/LGK-Vector`；发布时只推送经过审计的 clean-root 公共快照，不公开含个人邮箱和旧名称的私有开发历史；
+- 固定公开仓库地址为 `https://github.com/qudh666666-web/LGK-AUTOSAR`；发布时只推送经过审计的 clean-root 公共快照，不公开含个人邮箱和旧名称的私有开发历史；
 - 对齐既有 Vector 自动化入口的 Windows 行为：包装器固定使用 UTF-8 输入、输出和无 BOM 请求编码，中文、空格路径加入端到端回归；
 - 修复 Windows `connect_timeout` 后套接字偶发保留非阻塞状态，导致 Host 探测把 `10035/WouldBlock` 误报为端口冲突的问题；
 - `find_module_template` 默认改为轻量容器树，只返回容器层级及参数/引用名称；完整描述、范围和目标仅在 `details:true` 时返回，日常精确查询继续使用 `get_param_definition`；
@@ -320,7 +337,7 @@
 
 Target release tag: `v0.3.0` (not published yet)
 
-- 将工程配置缩减为最小 `tool_path`，工程目录由 `lgk-vector.json` 所在位置推导；多 DPA 或多 DaVinci 命令时仍可显式选择；
+- 将工程配置缩减为最小 `tool_path`，工程目录由 `lgk-autosar.json` 所在位置推导；多 DPA 或多 DaVinci 命令时仍可显式选择；
 - 新增首次接入初始化器和非写入 doctor，并支持从任意 PowerShell 工作目录传入相对的 DPA/命令路径；
 - 为 CLI/Host 增加版本一致性校验、请求结构预检、三分钟超时与自有 DaVinci 进程树清理；
 - 为 resident host 增加协议版本和源码构建标识握手；发布包另带双 EXE 的 SHA-256 配对清单，明确拒绝旧 Host、部分重建的 EXE 组合或占用固定端口的其他程序；
@@ -356,7 +373,7 @@ Limitation: release binaries are not updated until the Rust toolchain is availab
 
 文档提交：`c7f2b69`
 
-- 将原“跨工程接入与维护”说明扩展为 LGK-Vector 主使用手册；
+- 将原“跨工程接入与维护”说明扩展为 LGK-AUTOSAR 主使用手册；
 - 补充工具用途、前置条件、中央安装、工程配置、Codex 与 PowerShell 两种调用方式；
 - 为 10 个正式函数分别说明参数、返回信息、是否启动 DaVinci、示例和注意事项；
 - 增加 COM 参数从查询、定位、最小修改、单模块生成、Compare 到关闭 host 的完整流程；
@@ -370,10 +387,10 @@ Limitation: release binaries are not updated until the Rust toolchain is availab
 
 实现提交：`016fc05`
 
-- 改为 D 盘单一共享安装：所有工程共同使用 `D:\Tools\LGK-Vector`，不再把源码和程序复制进各工程；
-- 新增 `Install-LGKVectorSkill.ps1`，用 Windows 目录链接把 Codex 全局 Skill 指向同一份 D 盘源码；
+- 改为 D 盘单一共享安装：所有工程共同使用 `D:\Tools\LGK-AUTOSAR`，不再把源码和程序复制进各工程；
+- 新增 `Install-LGKAutosarSkill.ps1`，用 Windows 目录链接把 Codex 全局 Skill 指向同一份 D 盘源码；
 - 包装器会依次使用源码根目录或 `target\release` 中的程序，兼顾本地发布和源码开发；
-- 每个 AUTOSAR 工程只保存自己的 `lgk-vector.json`，工具修改只提交到中央源码仓库；
+- 每个 AUTOSAR 工程只保存自己的 `lgk-autosar.json`，工具修改只提交到中央源码仓库；
 - 更新跨工程说明、Skill 和调用示例，避免多份源码产生版本漂移。
 
 验证：12 个 Rust 测试通过，release 构建成功；目录链接安装、Skill 校验和旧工程配置 `-ValidateOnly` 均通过。
@@ -398,7 +415,7 @@ Limitation: release binaries are not updated until the Rust toolchain is availab
 
 实现提交：`984adc1`
 
-- 完成 LGK-Vector 独立命名和 Rust 源码整理；
+- 完成 LGK-AUTOSAR 独立命名和 Rust 源码整理；
 - 支持 ECUC 模块/模板/参数定位、最小行编辑、DaVinci 校验与代码生成；
 - 通过 resident host 复用 DaVinci 会话，并提供正常关闭协议；
 - 模块定义路径取自当前工程，不绑定 TC275、MICROSAR 或特定厂商 SIP。
