@@ -101,10 +101,11 @@ For a CAN0/CAN1 switch, inspect and change this chain in order:
 
 ### Validation gate after every generation
 
-Treat an LGK `generation completed` response as provisional. Immediately read
-the newest DaVinci Generation Report and require all of the following before
-calling generation successful, synchronizing generated files, committing, or
-reporting completion:
+From v0.3.8, `generate_code` automatically verifies the one report created or
+rewritten by this request in DPA `Folders/Logs`. Require `passed:true` and the
+returned report summary; do not re-read a passing report through the Agent.
+For older binaries or a failed gate, inspect the named report before calling
+generation successful, synchronizing files, committing, or reporting completion:
 
 - Validation has zero errors.
 - The requested module has `Execution Result: SUCCESS` and its `GENERATION`
@@ -327,10 +328,21 @@ the few required names with `get_param_definition`. Use `details:true` only for
 explicit maintainer diagnosis. The resident Host caches the parsed template and
 invalidates it when the source ARXML changes.
 
-The executable accepts an omitted `generate_code.module` as legacy
-`module:"all"` compatibility. Do not rely on that default in agent work: name
-the affected module, or write `module:"all"` when full generation is genuinely
-requested.
+`generate_code` requires `module` (or the existing `module_name` alias).
+An omitted module is rejected before DaVinci starts. Migrate old callers by
+passing the affected module or explicit `module:"all"`; module names and real
+definition paths continue to come from the current project, not a whitelist.
+Report discovery scans only two levels of DPA `Folders/Logs` (8192 entries,
+32 MiB report limit), never the SIP. Missing, unchanged, ambiguous or unsupported
+reports fail acceptance without retrying generation. Only failure requires
+Agent diagnosis; no extra approval or successful-path request is introduced.
+
+`edit_file` syncs a unique same-directory temporary file, rechecks the original
+bytes, then renames it over the target. There is no copy-over fallback. This
+prevents partial-copy damage but does not lock out an external GUI or guarantee
+power-loss durability; the save-and-close GUI rule still applies. Rename keeps
+the temporary file's filesystem identity and inherited ACL; custom per-file
+ACLs, alternate streams and hard-link identity are not preserved.
 
 Use `update_project` to run the DPA's registered Project Update inputs. Use
 `import_dbc` with an absolute `source` and a project-relative `registered_path`

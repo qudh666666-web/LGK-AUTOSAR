@@ -153,11 +153,9 @@ fn finds_module_and_definition() {
         "ECUC-NUMERICAL-PARAM-VALUE"
     );
 
-    let template = ops::find_module_template::execute(
-        &config,
-        &json!({"module": "Com", "details": true}),
-    )
-        .expect("find module template");
+    let template =
+        ops::find_module_template::execute(&config, &json!({"module": "Com", "details": true}))
+            .expect("find module template");
     let definitions = template["definitions"].as_array().expect("definitions");
     let container = definitions
         .iter()
@@ -432,7 +430,9 @@ fn confines_delivery_verification_to_the_declared_project_root() {
         }),
     )
     .expect_err("relative path traversal must be rejected");
-    assert!(traversal_error.to_string().contains("cannot contain parent"));
+    assert!(traversal_error
+        .to_string()
+        .contains("cannot contain parent"));
 }
 
 #[test]
@@ -447,8 +447,23 @@ fn doctor_rejects_missing_required_fields_before_starting_davinci() {
 
     let implicit_full_generation =
         CommandDispatcher::validate_batch(&config, r#"{"func":"generate_code"}"#)
-            .expect("omitted generation module must keep legacy module=all behavior");
-    assert_eq!(implicit_full_generation, vec!["generate_code"]);
+            .expect_err("omitted generation module must not cause full generation");
+    assert!(implicit_full_generation
+        .to_string()
+        .contains("module is required"));
+    assert!(CommandDispatcher::new()
+        .dispatch_batch(&config, r#"{"func":"generate_code"}"#)
+        .is_err());
+    assert!(CommandDispatcher::validate_batch(
+        &config,
+        r#"{"func":"generate_code","module":"all"}"#
+    )
+    .is_ok());
+    assert!(CommandDispatcher::validate_batch(
+        &config,
+        r#"{"func":"generate_code","module_name":"Com"}"#
+    )
+    .is_ok());
 
     let mixed_inspection = CommandDispatcher::validate_batch(
         &config,

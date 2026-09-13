@@ -18,6 +18,10 @@ description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修�
    一条带 `expected` 的小范围 `edit_file` 请求。
 3. 只对受影响模块调用 `generate_code`。若失败，再读取该模块的
    `get_errors_list`；不要盲目重试或全量生成。
+   必须传 `module` 或兼容字段 `module_name`；全量明确传 `module:"all"`。
+   工具自动验收本次 Generation Report，成功须有 `passed:true`，无需再次读取
+   已通过的报告。模块按工程真实定义路径匹配；报告缺失、过期、歧义或格式不支持
+   会报错，不自动重试。失败时先看报告路径及原因。
 4. 同步或交付前调用 `verify_delivery`，核对实际编译文件与生成文件完全一致，
    并验证本任务要求出现或禁止出现的关键文本；必须得到 `passed:true`。
 5. 分开汇报 ECUC 配置改动与生成的 C/H/LSL 输出。

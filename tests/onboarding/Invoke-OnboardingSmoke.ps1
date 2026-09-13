@@ -121,7 +121,7 @@ try {
     Assert-True ($doctor.valid -eq $true) 'initializer doctor must report valid=true'
     Assert-True ($doctor.preflight -eq 'static') 'doctor must label itself as a static preflight'
     Assert-True ($doctor.davinci_executed -eq $false) 'doctor must not claim that DaVinci was executed'
-    Assert-True ($doctor.version -eq '0.3.7') 'initializer must use the current release binary'
+    Assert-True ($doctor.version -eq '0.3.8') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
     $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
@@ -251,6 +251,10 @@ $ErrorActionPreference = 'Stop'
     $bomModule = (($bomOutput | Out-String) | ConvertFrom-Json)
     Assert-True ($bomModule.definition_ref -eq '/PublicStack/Com') 'UTF-8 BOM request files must be accepted end to end'
 
+    Assert-Fails -ExpectedText 'module is required' -Action {
+        & $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"generate_code"}'
+    }
+
     $failingRequest = Join-Path $temporaryRoot 'failing-request.json'
     Write-Utf8 -Path $failingRequest -Content '{"func":"find_module","module":"Missing"}'
     Assert-Fails -ExpectedText "request: $failingRequest" -Action {
@@ -327,7 +331,7 @@ $ErrorActionPreference = 'Stop'
     $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKVector.ps1'
     $packageDoctorOutput = @(& $packageInitializer -ProjectPath $packageProject -ToolPath $tool)
     $packageDoctor = (($packageDoctorOutput | Out-String) | ConvertFrom-Json)
-    Assert-True ($packageDoctor.version -eq '0.3.7') 'packaged initializer must use packaged binaries by default'
+    Assert-True ($packageDoctor.version -eq '0.3.8') 'packaged initializer must use packaged binaries by default'
 
     $activeWrapper = $packageWrapper
     $activeProject = $packageProject

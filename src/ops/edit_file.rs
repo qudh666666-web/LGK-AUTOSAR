@@ -75,27 +75,46 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     }
     encoded.extend_from_slice(output.as_bytes());
 
-    // 先完整写入临时文件并 sync，再复制覆盖原文件，降低中途写坏的风险。
-    let temp_path = path.with_extension(format!(
-        "{}.lgk-vector.tmp",
-        path.extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("tmp")
-    ));
-    {
-        let mut temp = fs::File::create(&temp_path)
-            .with_context(|| format!("failed to create {}", temp_path.display()))?;
-        temp.write_all(&encoded)?;
-        temp.sync_all()?;
-    }
-    fs::copy(&temp_path, &path).with_context(|| format!("failed to replace {}", path.display()))?;
-    fs::remove_file(&temp_path).ok();
+    replace_checked(&path, &original, &encoded)?;
 
     Ok(json!({
         "path": path,
         "applied_edits": parsed.len(),
         "message": "Edited file",
     }))
+}
+
+fn replace_checked(path: &Path, original: &[u8], encoded: &[u8]) -> Result<()> {
+    // Same-directory rename replaces the complete file without truncating it.
+    // Never fall back to copying over the destination when rename is refused.
+    let temp_path = path.with_extension(format!(
+        "lgk-vector-{}-{}.tmp",
+        std::process::id(),
+        rand::random::<u64>()
+    ));
+    let mut temp = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp_path)
+        .with_context(|| format!("failed to create {}", temp_path.display()))?;
+    let result = (|| -> Result<()> {
+        temp.write_all(encoded)?;
+        temp.sync_all()?;
+        drop(temp);
+        if fs::read(path)? != original {
+            bail!("edit precondition failed before replacement; re-read the file");
+        }
+        fs::set_permissions(&temp_path, fs::metadata(path)?.permissions())?;
+        fs::rename(&temp_path, path).with_context(|| {
+            format!(
+                "atomic replacement failed for {}; no copy fallback was attempted",
+                path.display()
+            )
+        })?;
+        Ok(())
+    })();
+    fs::remove_file(&temp_path).ok();
+    result
 }
 
 /// Perform every edit precondition check without writing the target file.
@@ -230,4 +249,52 @@ fn reject_overlaps(edits: &[Edit]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn replacement_keeps_old_open_reader_complete_and_cleans_temp() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("example.arxml");
+        fs::write(&path, b"original").unwrap();
+        let mut old_reader = fs::File::open(&path).unwrap();
+        replace_checked(&path, b"original", b"complete replacement").unwrap();
+        let mut previous = String::new();
+        old_reader.read_to_string(&mut previous).unwrap();
+        assert_eq!(previous, "original");
+        assert_eq!(fs::read(&path).unwrap(), b"complete replacement");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn changed_content_is_not_overwritten_at_commit() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("example.arxml");
+        fs::write(&path, b"external edit").unwrap();
+        assert!(replace_checked(&path, b"original", b"replacement").is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"external edit");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn denied_rename_does_not_fall_back_to_truncating_copy() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("example.arxml");
+        fs::write(&path, b"original").unwrap();
+        // Permit reading/writing but explicitly deny deletion/rename.
+        let _reader = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(3)
+            .open(&path)
+            .unwrap();
+        assert!(replace_checked(&path, b"original", b"replacement").is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"original");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
 }
