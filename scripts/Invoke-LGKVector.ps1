@@ -207,6 +207,8 @@ try {
     # this list exists only to reject misspelled functions before Host startup.
     $allowedFunctions = @(
         'inspect_ecuc_containers',
+        'inspect_autosar_model',
+        'trace_autosar_model',
         'diff_ecuc',
         'set_ecuc_value',
         'find_module',

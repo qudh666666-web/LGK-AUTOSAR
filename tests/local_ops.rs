@@ -121,6 +121,67 @@ fn fixture() -> (tempfile::TempDir, SessionConfig) {
     (root, config)
 }
 
+fn write_autosar_model_fixture(config: &SessionConfig) {
+    let system = config.project_path.join("Config/System");
+    let developer = config.project_path.join("Config/Developer");
+    fs::create_dir_all(&system).expect("system model dir");
+    fs::create_dir_all(&developer).expect("developer model dir");
+    fs::write(
+        system.join("Communication.arxml"),
+        r#"<AUTOSAR><AR-PACKAGES><AR-PACKAGE><SHORT-NAME>Signals</SHORT-NAME><ELEMENTS>
+        <SYSTEM-SIGNAL><SHORT-NAME>VehicleSpeed</SHORT-NAME></SYSTEM-SIGNAL>
+        <I-SIGNAL><SHORT-NAME>ISignalVehicleSpeed</SHORT-NAME><SYSTEM-SIGNAL-REF DEST="SYSTEM-SIGNAL">/Signals/VehicleSpeed</SYSTEM-SIGNAL-REF></I-SIGNAL>
+        <I-SIGNAL-I-PDU><SHORT-NAME>SpeedPdu</SHORT-NAME><I-SIGNAL-TO-I-PDU-MAPPINGS><I-SIGNAL-TO-I-PDU-MAPPING><SHORT-NAME>SpeedMap</SHORT-NAME><I-SIGNAL-REF DEST="I-SIGNAL">/Signals/ISignalVehicleSpeed</I-SIGNAL-REF></I-SIGNAL-TO-I-PDU-MAPPING></I-SIGNAL-TO-I-PDU-MAPPINGS></I-SIGNAL-I-PDU>
+        <CAN-FRAME><SHORT-NAME>SpeedFrame</SHORT-NAME><PDU-TO-FRAME-MAPPINGS><PDU-TO-FRAME-MAPPING><SHORT-NAME>FrameMap</SHORT-NAME><PDU-REF DEST="I-SIGNAL-I-PDU">/Signals/SpeedPdu</PDU-REF></PDU-TO-FRAME-MAPPING></PDU-TO-FRAME-MAPPINGS></CAN-FRAME>
+        </ELEMENTS></AR-PACKAGE></AR-PACKAGES></AUTOSAR>"#,
+    )
+    .expect("system model");
+    fs::write(
+        developer.join("Software.arxml"),
+        r#"<AUTOSAR><AR-PACKAGES><AR-PACKAGE><SHORT-NAME>Application</SHORT-NAME><ELEMENTS>
+        <APPLICATION-SW-COMPONENT-TYPE><SHORT-NAME>SpeedConsumer</SHORT-NAME><PORTS><R-PORT-PROTOTYPE><SHORT-NAME>SpeedPort</SHORT-NAME><REQUIRED-INTERFACE-TREF DEST="SENDER-RECEIVER-INTERFACE">/Application/SpeedInterface</REQUIRED-INTERFACE-TREF></R-PORT-PROTOTYPE></PORTS></APPLICATION-SW-COMPONENT-TYPE>
+        <SENDER-RECEIVER-INTERFACE><SHORT-NAME>SpeedInterface</SHORT-NAME><DATA-ELEMENTS><VARIABLE-DATA-PROTOTYPE><SHORT-NAME>Speed</SHORT-NAME><TYPE-TREF DEST="IMPLEMENTATION-DATA-TYPE">/Application/SpeedType</TYPE-TREF></VARIABLE-DATA-PROTOTYPE></DATA-ELEMENTS></SENDER-RECEIVER-INTERFACE>
+        <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>SpeedType</SHORT-NAME></IMPLEMENTATION-DATA-TYPE>
+        <DATA-MAPPINGS><SHORT-NAME>SpeedDataMapping</SHORT-NAME><SYSTEM-SIGNAL-REF DEST="SYSTEM-SIGNAL">/Signals/VehicleSpeed</SYSTEM-SIGNAL-REF><DATA-ELEMENT-REF DEST="VARIABLE-DATA-PROTOTYPE">/Application/SpeedInterface/Speed</DATA-ELEMENT-REF></DATA-MAPPINGS>
+        </ELEMENTS></AR-PACKAGE></AR-PACKAGES></AUTOSAR>"#,
+    )
+    .expect("developer model");
+}
+
+#[test]
+fn inspect_autosar_model_indexes_system_and_developer_objects() {
+    let (_root, config) = fixture();
+    write_autosar_model_fixture(&config);
+    let result = CommandDispatcher::new()
+        .dispatch_batch(
+            &config,
+            r#"{"func":"inspect_autosar_model","kinds":["CAN-FRAME","APPLICATION-SW-COMPONENT-TYPE"],"limit":8}"#,
+        )
+        .expect("inspect model");
+    assert_eq!(result["total"], 2);
+    assert_eq!(result["files_scanned"], 2);
+}
+
+#[test]
+fn trace_autosar_model_crosses_references_and_containment() {
+    let (_root, config) = fixture();
+    write_autosar_model_fixture(&config);
+    let result = CommandDispatcher::new()
+        .dispatch_batch(
+            &config,
+            r#"{"func":"trace_autosar_model","start":"/Signals/VehicleSpeed","direction":"both","depth":5}"#,
+        )
+        .expect("trace model");
+    let paths = result["nodes"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .filter_map(|node| node["path"].as_str())
+        .collect::<Vec<_>>();
+    assert!(paths.contains(&"/Signals/SpeedFrame"));
+    assert!(paths.contains(&"/Application/SpeedDataMapping"));
+}
+
 #[test]
 fn accepts_utf8_bom_in_project_configuration() {
     let (root, config) = fixture();

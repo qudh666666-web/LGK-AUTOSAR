@@ -94,6 +94,12 @@ impl CommandDispatcher {
             "inspect_ecuc_containers" => {
                 ops::inspect_ecuc_containers::execute(config, request)?;
             }
+            "inspect_autosar_model" => {
+                ops::autosar_model::inspect(config, request)?;
+            }
+            "trace_autosar_model" => {
+                ops::autosar_model::trace(config, request)?;
+            }
             "locate_container" => {
                 ops::locate_container::execute(config, request)?;
             }
@@ -155,6 +161,8 @@ impl CommandDispatcher {
                 ops::get_param_definition::execute(config, request)
             }
             "inspect_ecuc_containers" => ops::inspect_ecuc_containers::execute(config, request),
+            "inspect_autosar_model" => ops::autosar_model::inspect(config, request),
+            "trace_autosar_model" => ops::autosar_model::trace(config, request),
             "locate_container" => ops::locate_container::execute(config, request),
             "verify_delivery" => ops::verify_delivery::execute(config, request),
             "diff_ecuc" => ops::diff_ecuc::execute(config, request),
