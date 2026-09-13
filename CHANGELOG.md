@@ -2,6 +2,34 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## v0.3.10 - 2026-09-13
+
+- Implementation commit: `53bd44d`. Borrowed the stable path plus
+  add/modify/delete result shape from claude-autosar and independently
+  implemented the Rust ECUC-specific parser, safety limits and tests. Source
+  links and adoption boundaries are recorded in docs/开源借鉴记录.md; no
+  upstream code or new runtime dependency was copied.
+- Added read-only `diff_ecuc` through doctor, resident Host, CLI and PowerShell
+  wrapper. It compares one concrete module in two project-contained ARXML files
+  and reports only changed parameter/reference values at stable semantic paths.
+  Inputs may be project-relative or absolute contained paths; files outside the
+  project, non-ARXML inputs and inputs over 64 MiB are rejected.
+- Output defaults to 32 changes, has a hard 256-change limit and caps each
+  returned old/new value at 512 Unicode characters with per-value truncation
+  flags. `path_prefix` narrows results. Counts describe the complete filtered
+  result before truncation; duplicate semantic paths fail with
+  ECUC_DIFF_AMBIGUOUS_PATH rather than being paired heuristically.
+- Verified: release build produced matching v0.3.10 CLI/Host; 45 Rust tests
+  passed and one optional private-report test was ignored; Clippy `-D warnings`,
+  changed-file rustfmt and diff checks passed; onboarding passed 59 assertions;
+  packaged EXE self-test passed 12 assertions; package manifest passed 13;
+  current-content and dependency-license guards passed.
+- Limits: compares saved ECUC parameter/reference values only. Container
+  metadata, UUID, comments, ordering and formatting changes are omitted;
+  container renames appear as delete plus add. No live DaVinci operation,
+  customer project mutation, LLM-token benchmark, public push/tag/Release or
+  public snapshot sync was performed.
+
 ## v0.3.9 - 2026-09-13
 
 - Implementation commit: `8fe352d`. Borrowed the structured-field diagnostic
