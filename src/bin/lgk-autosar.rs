@@ -11,7 +11,7 @@ fn main() {
 fn run() -> anyhow::Result<()> {
     // 这个 EXE 是一次性 CLI：支持内联 JSON、stdin 和请求文件三种输入。
     let mut args = std::env::args_os();
-    let executable = args.next().unwrap_or_else(|| "lgk-vector".into());
+    let executable = args.next().unwrap_or_else(|| "lgk-autosar".into());
     let Some(raw) = args.next() else {
         anyhow::bail!(
             "Usage: {} --version | --doctor --request-file <path> | --request-file <path> | --stdin | '{{\"func\":\"find_module\",\"module\":\"Com\"}}'",
@@ -26,10 +26,10 @@ fn run() -> anyhow::Result<()> {
             anyhow::bail!("--version does not accept another argument");
         }
         println!(
-            "lgk-vector {} protocol={} build={}",
+            "lgk-autosar {} protocol={} build={}",
             env!("CARGO_PKG_VERSION"),
-            lgk_vector::app::HOST_PROTOCOL_VERSION,
-            lgk_vector::app::BUILD_ID
+            lgk_autosar::app::HOST_PROTOCOL_VERSION,
+            lgk_autosar::app::BUILD_ID
         );
         return Ok(());
     }
@@ -38,7 +38,7 @@ fn run() -> anyhow::Result<()> {
         if args.next().is_some() {
             anyhow::bail!("--start-host does not accept another argument");
         }
-        lgk_vector::app::cli::ensure_host()?;
+        lgk_autosar::app::cli::ensure_host()?;
         println!("resident host ready");
         return Ok(());
     }
@@ -57,7 +57,7 @@ fn run() -> anyhow::Result<()> {
         }
         let request = without_utf8_bom(std::fs::read_to_string(PathBuf::from(path))?);
         let project = std::env::current_dir()?;
-        println!("{}", lgk_vector::app::cli::doctor(&project, &request)?);
+        println!("{}", lgk_autosar::app::cli::doctor(&project, &request)?);
         return Ok(());
     }
     let raw = match raw.as_str() {
@@ -86,9 +86,9 @@ fn run() -> anyhow::Result<()> {
         }
     };
     let raw = without_utf8_bom(raw);
-    // 当前工作目录就是 Cfg；SessionConfig 会从这里读取 lgk-vector.json。
+    // 当前工作目录就是 Cfg；SessionConfig 会从这里读取 lgk-autosar.json。
     let project = std::env::current_dir()?;
-    let output = lgk_vector::app::cli::run(&project, &raw)?;
+    let output = lgk_autosar::app::cli::run(&project, &raw)?;
     println!("{output}");
     Ok(())
 }

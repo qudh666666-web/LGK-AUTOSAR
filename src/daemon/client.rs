@@ -14,7 +14,7 @@ use walkdir::WalkDir;
 use crate::project::SessionConfig;
 
 // 编译时把 Groovy 代理嵌入 EXE；运行时再写入临时目录交给 DVCfgCmd。
-const DAEMON_SCRIPT: &str = include_str!("../../assets/LGKVectorDaemon.dvgroovy");
+const DAEMON_SCRIPT: &str = include_str!("../../assets/LGKAutosarDaemon.dvgroovy");
 const DAVINCI_START_TIMEOUT: Duration = Duration::from_secs(45);
 const DAVINCI_OPERATION_TIMEOUT: Duration = Duration::from_secs(120);
 const DAVINCI_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
@@ -34,13 +34,13 @@ impl DaVinciClient {
         let dpa = config.dpa_file()?;
         // 每个 DaVinci 会话使用独立临时目录，避免并发会话共用 Groovy 或日志。
         let runtime_dir = std::env::temp_dir().join(format!(
-            "lgk-vector-{}-{}",
+            "lgk-autosar-{}-{}",
             std::process::id(),
             rand::random::<u64>()
         ));
         fs::create_dir(&runtime_dir)
             .with_context(|| format!("create runtime dir: {}", runtime_dir.display()))?;
-        let script_path = runtime_dir.join("LGKVectorDaemon.dvgroovy");
+        let script_path = runtime_dir.join("LGKAutosarDaemon.dvgroovy");
         fs::write(&script_path, DAEMON_SCRIPT)
             .with_context(|| format!("write script: {}", script_path.display()))?;
         let stdout_log = runtime_dir.join("DVCfgCmd.stdout.log");
@@ -55,7 +55,7 @@ impl DaVinciClient {
             .arg("--scriptLocations")
             .arg(&runtime_dir)
             .arg("--scriptTask")
-            .arg("LGKVectorDaemon")
+            .arg("LGKAutosarDaemon")
             .arg("--ignoreUserScriptLocations")
             .arg("--verbose")
             .arg("ERROR")
@@ -328,7 +328,7 @@ fn spawn_stdout_reader(
                 let _ = writeln!(log, "{line}");
             }
             if !sent {
-                if let Some(raw_port) = line.trim().strip_prefix("LGK_VECTOR_READY:") {
+                if let Some(raw_port) = line.trim().strip_prefix("LGK_AUTOSAR_READY:") {
                     if let Ok(port) = raw_port.parse::<u16>() {
                         let _ = port_sender.send(port);
                         sent = true;
@@ -396,7 +396,7 @@ fn cleanup_runtime_dir(path: &Path) {
         && path
             .file_name()
             .and_then(|value| value.to_str())
-            .is_some_and(|value| value.starts_with("lgk-vector-"))
+            .is_some_and(|value| value.starts_with("lgk-autosar-"))
     {
         fs::remove_dir_all(path).ok();
     }

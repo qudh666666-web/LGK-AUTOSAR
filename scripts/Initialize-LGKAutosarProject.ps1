@@ -18,19 +18,19 @@ param(
 
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ([string]::IsNullOrWhiteSpace($scriptDirectory)) {
-    throw 'Cannot determine the LGK-Vector script location; pass -ExecutablePath explicitly.'
+    throw 'Cannot determine the LGK-AUTOSAR script location; pass -ExecutablePath explicitly.'
 }
 if ([string]::IsNullOrWhiteSpace($ExecutablePath)) {
     # A minimal release keeps this initializer beside its EXE; source builds
     # retain the historical scripts/ location and fall back below.
-    $runtimeExecutable = Join-Path $scriptDirectory 'lgk-vector.exe'
-    $rootExecutable = Join-Path $scriptDirectory '..\lgk-vector.exe'
+    $runtimeExecutable = Join-Path $scriptDirectory 'lgk-autosar.exe'
+    $rootExecutable = Join-Path $scriptDirectory '..\lgk-autosar.exe'
     if (Test-Path -LiteralPath $runtimeExecutable -PathType Leaf) {
         $ExecutablePath = $runtimeExecutable
     } elseif (Test-Path -LiteralPath $rootExecutable -PathType Leaf) {
         $ExecutablePath = $rootExecutable
     } else {
-        $ExecutablePath = Join-Path $scriptDirectory '..\target\release\lgk-vector.exe'
+        $ExecutablePath = Join-Path $scriptDirectory '..\target\release\lgk-autosar.exe'
     }
 }
 
@@ -43,7 +43,7 @@ if (-not (Test-Path -LiteralPath $tool -PathType Container)) {
     throw "ToolPath is not a directory: $tool"
 }
 
-$configPath = Join-Path $project 'lgk-vector.json'
+$configPath = Join-Path $project 'lgk-autosar.json'
 if (Test-Path -LiteralPath $configPath) {
     throw "Refusing to overwrite the existing project configuration: $configPath"
 }
@@ -68,7 +68,7 @@ function Get-PortablePath([string]$Base, [string]$Candidate, [string]$Name) {
     $resolved
 }
 
-# project_path is intentionally omitted. LGK-Vector derives it from the folder
+# project_path is intentionally omitted. LGK-AUTOSAR derives it from the folder
 # containing this JSON, so moving or cloning the ECUC project does not stale it.
 $config = [ordered]@{ tool_path = $tool }
 if (-not [string]::IsNullOrWhiteSpace($ProjectFile)) {
@@ -84,13 +84,13 @@ $json = $config | ConvertTo-Json -Depth 3
 try {
     # get_errors_list is not executed in doctor mode; it makes doctor verify the
     # DPA and DVCfgCmd paths in addition to the JSON and executable pair.
-    $result = & (Join-Path $scriptDirectory 'Invoke-LGKVector.ps1') `
+    $result = & (Join-Path $scriptDirectory 'Invoke-LGKAutosar.ps1') `
         -ProjectPath $project `
         -ExecutablePath $ExecutablePath `
         -Request '{"func":"get_errors_list"}' `
         -ValidateOnly
     if ($LASTEXITCODE -ne 0) {
-        throw "LGK-Vector doctor failed with exit code $LASTEXITCODE"
+        throw "LGK-AUTOSAR doctor failed with exit code $LASTEXITCODE"
     }
     $result
 } catch {

@@ -10,4 +10,4 @@ Use GitHub private vulnerability reporting for defects involving command executi
 
 If private reporting is unavailable, open an issue containing only a high-level description and ask the maintainer to enable a private channel. Do not publish exploit details or sensitive artifacts in a public issue.
 
-LGK-Vector listens only on the local loopback interface and uses a local token, but it is not a security boundary for running untrusted requests under the same Windows account. Review every write or generation request before use.
+LGK-AUTOSAR listens only on the local loopback interface and uses a local token, but it is not a security boundary for running untrusted requests under the same Windows account. Review every write or generation request before use.

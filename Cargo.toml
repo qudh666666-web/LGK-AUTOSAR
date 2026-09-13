@@ -1,25 +1,25 @@
 [package]
-name = "lgk-vector"
-version = "0.3.12"
+name = "lgk-autosar"
+version = "0.4.0"
 edition = "2021"
 description = "Open-source local bridge for licensed Vector DaVinci ECUC projects"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/qudh666666-web/LGK-Vector"
+repository = "https://github.com/qudh666666-web/LGK-AUTOSAR"
 keywords = ["autosar", "ecuc", "davinci", "vector"]
 categories = ["command-line-utilities", "development-tools"]
 
 [lib]
-name = "lgk_vector"
+name = "lgk_autosar"
 path = "src/lib.rs"
 
 [[bin]]
-name = "lgk-vector"
-path = "src/bin/lgk-vector.rs"
+name = "lgk-autosar"
+path = "src/bin/lgk-autosar.rs"
 
 [[bin]]
-name = "lgk-vector-host"
-path = "src/bin/lgk-vector-host.rs"
+name = "lgk-autosar-host"
+path = "src/bin/lgk-autosar-host.rs"
 
 [dependencies]
 anyhow = "1.0"

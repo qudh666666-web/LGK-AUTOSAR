@@ -1,18 +1,18 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter()]
     [string]$RepositoryRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
 
     [Parameter()]
-    [string]$ExecutablePath = (Join-Path $RepositoryRoot 'target\release\lgk-vector.exe')
+    [string]$ExecutablePath = (Join-Path $RepositoryRoot 'target\release\lgk-autosar.exe')
 )
 
 $ErrorActionPreference = 'Stop'
 $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-$wrapper = Join-Path $repository 'scripts\Invoke-LGKVector.ps1'
-$initializer = Join-Path $repository 'scripts\Initialize-LGKVectorProject.ps1'
+$wrapper = Join-Path $repository 'scripts\Invoke-LGKAutosar.ps1'
+$initializer = Join-Path $repository 'scripts\Initialize-LGKAutosarProject.ps1'
 $executable = (Resolve-Path -LiteralPath $ExecutablePath).Path
-$temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lgk-vector-onboarding-中文 空格-" + [Guid]::NewGuid().ToString('N'))
+$temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lgk-autosar-onboarding-中文 空格-" + [Guid]::NewGuid().ToString('N'))
 $project = Join-Path $temporaryRoot 'Cfg'
 $tool = Join-Path $temporaryRoot 'SIP'
 $hostStarted = $false
@@ -63,7 +63,7 @@ function Test-HostPort([int]$Port = 32483) {
 
 try {
     if ((Test-HostPort -Port 32483) -or (Test-HostPort -Port 32484)) {
-        throw 'Port 32483 or 32484 is already occupied; stop the existing LGK-Vector host before this isolated smoke test'
+        throw 'Port 32483 or 32484 is already occupied; stop the existing LGK-AUTOSAR host before this isolated smoke test'
     }
 
     New-Item -ItemType Directory -Path $project, $tool -Force | Out-Null
@@ -121,7 +121,7 @@ try {
     Assert-True ($doctor.valid -eq $true) 'initializer doctor must report valid=true'
     Assert-True ($doctor.preflight -eq 'static') 'doctor must label itself as a static preflight'
     Assert-True ($doctor.davinci_executed -eq $false) 'doctor must not claim that DaVinci was executed'
-    Assert-True ($doctor.version -eq '0.3.12') 'initializer must use the current release binary'
+    Assert-True ($doctor.version -eq '0.4.0') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
     $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
@@ -129,7 +129,7 @@ try {
     Assert-True ($updateDoctor.valid -eq $true) 'update_project must be accepted by wrapper and doctor'
     Assert-True ($updateDoctor.davinci_executed -eq $false) 'update_project doctor must remain non-executing'
 
-    $configPath = Join-Path $project 'lgk-vector.json'
+    $configPath = Join-Path $project 'lgk-autosar.json'
     $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ($config.PSObject.Properties.Name -notcontains 'project_path') 'portable config must derive project_path from its own directory'
     $configText = [System.IO.File]::ReadAllText($configPath, [System.Text.Encoding]::UTF8)
@@ -150,7 +150,7 @@ try {
         -ExecutablePath $executable)
     $explicitDoctor = (($explicitInitialization | Out-String) | ConvertFrom-Json)
     Assert-True ($explicitDoctor.valid -eq $true) 'relative explicit project and command paths must pass doctor'
-    $explicitConfig = Get-Content -LiteralPath (Join-Path $explicitProject 'lgk-vector.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $explicitConfig = Get-Content -LiteralPath (Join-Path $explicitProject 'lgk-autosar.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ($explicitConfig.project_file -eq 'PublicExample.dpa') 'initializer must store a project-relative DPA path'
     Assert-True ($explicitConfig.davinci_command_path -eq 'DaVinci\Exec\DVCfgCmd.exe') 'initializer must store a tool-relative command path'
     Assert-Fails -ExpectedText 'module is required' -Action {
@@ -358,24 +358,24 @@ $ErrorActionPreference = 'Stop'
     Assert-True (-not (Test-HostPort -Port 32484)) 'source-tree host must release the health port before package execution'
 
     $package = Join-Path $temporaryRoot 'release-package'
-    & (Join-Path $repository 'scripts\Sync-LGKVectorPackage.ps1') `
+    & (Join-Path $repository 'scripts\Sync-LGKAutosarPackage.ps1') `
         -SourceRoot $repository `
         -DestinationRoot $package `
         -IncludeBinaries | Out-Null
-    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-vector\lgk-vector.exe') -PathType Leaf) 'release package must include the CLI'
-    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-vector\lgk-vector-host.exe') -PathType Leaf) 'release package must include the matching Host'
-    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-vector\Invoke-LGKVector.ps1') -PathType Leaf) 'release package must include the runtime wrapper'
+    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-autosar\lgk-autosar.exe') -PathType Leaf) 'release package must include the CLI'
+    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-autosar\lgk-autosar-host.exe') -PathType Leaf) 'release package must include the matching Host'
+    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-autosar\Invoke-LGKAutosar.ps1') -PathType Leaf) 'release package must include the runtime wrapper'
     Assert-True (Test-Path -LiteralPath (Join-Path $package 'README.md') -PathType Leaf) 'release package must include the short install guide'
     Assert-True (Test-Path -LiteralPath (Join-Path $package 'LICENSE') -PathType Leaf) 'release package must include LICENSE'
     Assert-True (Test-Path -LiteralPath (Join-Path $package 'NOTICE') -PathType Leaf) 'release package must include NOTICE'
-    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-vector\SKILL.md') -PathType Leaf) 'release package must include the installable Skill'
-    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-vector\AGENTS.md') -PathType Leaf) 'release package must include cross-agent instructions'
+    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-autosar\SKILL.md') -PathType Leaf) 'release package must include the installable Skill'
+    Assert-True (Test-Path -LiteralPath (Join-Path $package 'lgk-autosar\AGENTS.md') -PathType Leaf) 'release package must include cross-agent instructions'
     Assert-True (Test-Path -LiteralPath (Join-Path $package 'test\\Run-ExeSelfTest.ps1') -PathType Leaf) 'release package must include the end-user EXE self-test'
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $package 'tests') -PathType Container)) 'release package must not include development tests'
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $package 'src') -PathType Container)) 'release package must not include Rust source'
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $package '.github') -PathType Container)) 'release package must not include CI configuration'
     Assert-Fails -ExpectedText 'must be new or empty' -Action {
-        & (Join-Path $repository 'scripts\Sync-LGKVectorPackage.ps1') `
+        & (Join-Path $repository 'scripts\Sync-LGKAutosarPackage.ps1') `
             -SourceRoot $repository `
             -DestinationRoot $package
     }
@@ -384,24 +384,24 @@ $ErrorActionPreference = 'Stop'
     New-Item -ItemType Directory -Path $packageProject -Force | Out-Null
     Copy-Item -LiteralPath $dpa -Destination (Join-Path $packageProject 'PublicExample.dpa')
     Copy-Item -LiteralPath (Join-Path $project 'Config') -Destination $packageProject -Recurse
-    $packageRuntime = Join-Path $package 'lgk-vector'
-    $packageInitializer = Join-Path $packageRuntime 'Initialize-LGKVectorProject.ps1'
-    $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKVector.ps1'
+    $packageRuntime = Join-Path $package 'lgk-autosar'
+    $packageInitializer = Join-Path $packageRuntime 'Initialize-LGKAutosarProject.ps1'
+    $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKAutosar.ps1'
     $packageDoctorOutput = @(& $packageInitializer -ProjectPath $packageProject -ToolPath $tool)
     $packageDoctor = (($packageDoctorOutput | Out-String) | ConvertFrom-Json)
-    Assert-True ($packageDoctor.version -eq '0.3.12') 'packaged initializer must use packaged binaries by default'
+    Assert-True ($packageDoctor.version -eq '0.4.0') 'packaged initializer must use packaged binaries by default'
 
     $activeWrapper = $packageWrapper
     $activeProject = $packageProject
     $hostStarted = $true
-    $packageToken = Join-Path $packageRuntime '.lgk-vector\host.token'
+    $packageToken = Join-Path $packageRuntime '.lgk-autosar\host.token'
     Write-Utf8 -Path $packageToken -Content 'invalid'
     $packageModuleOutput = @(& $packageWrapper -ProjectPath $packageProject -Request '{"func":"find_module","module":"Com"}')
     $packageModule = (($packageModuleOutput | Out-String) | ConvertFrom-Json)
     Assert-True ($packageModule.definition_ref -eq '/PublicStack/Com') 'packaged wrapper must execute a real local request'
     $repairedToken = ([System.IO.File]::ReadAllText($packageToken)).Trim()
     Assert-True ($repairedToken.Length -eq 64 -and $repairedToken -match '^[0-9a-f]+$') 'packaged CLI must replace an invalid resident token'
-    Write-Utf8 -Path (Join-Path $packageProject 'lgk-vector.json') -Content '{invalid'
+    Write-Utf8 -Path (Join-Path $packageProject 'lgk-autosar.json') -Content '{invalid'
     & $packageWrapper -ProjectPath $packageProject -Request '{"func":"shutdown_host"}' | Out-Null
     $hostStarted = $false
     Assert-True (-not (Test-HostPort -Port 32483)) 'packaged shutdown_host must release the business port'
@@ -424,7 +424,7 @@ $ErrorActionPreference = 'Stop'
     $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\') + '\'
     $resolvedTemporary = [System.IO.Path]::GetFullPath($temporaryRoot)
     if ($resolvedTemporary.StartsWith($tempBase, [StringComparison]::OrdinalIgnoreCase) -and
-        (Split-Path -Leaf $resolvedTemporary).StartsWith('lgk-vector-onboarding-')) {
+        (Split-Path -Leaf $resolvedTemporary).StartsWith('lgk-autosar-onboarding-')) {
         if (Test-Path -LiteralPath $resolvedTemporary) {
             # A just-closed Windows process may retain its current directory
             # for a few milliseconds.  Leave the fixture before deleting it,

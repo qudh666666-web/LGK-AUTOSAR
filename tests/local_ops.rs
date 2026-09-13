@@ -1,8 +1,8 @@
 use std::fs;
 
-use lgk_vector::daemon::commands::CommandDispatcher;
-use lgk_vector::ops;
-use lgk_vector::project::SessionConfig;
+use lgk_autosar::daemon::commands::CommandDispatcher;
+use lgk_autosar::ops;
+use lgk_autosar::project::SessionConfig;
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -109,7 +109,7 @@ fn fixture() -> (tempfile::TempDir, SessionConfig) {
     )
     .expect("template");
     fs::write(
-        project.join("lgk-vector.json"),
+        project.join("lgk-autosar.json"),
         format!(
             "{{\"project_path\":{},\"tool_path\":{}}}",
             serde_json::to_string(&project).expect("project JSON"),
@@ -185,7 +185,7 @@ fn trace_autosar_model_crosses_references_and_containment() {
 #[test]
 fn accepts_utf8_bom_in_project_configuration() {
     let (root, config) = fixture();
-    let config_path = config.project_path.join("lgk-vector.json");
+    let config_path = config.project_path.join("lgk-autosar.json");
     let raw = fs::read_to_string(&config_path).expect("read config");
     fs::write(&config_path, format!("\u{feff}{raw}")).expect("write BOM config");
     let reloaded = SessionConfig::load(&config.project_path).expect("load BOM config");
@@ -964,7 +964,7 @@ fn session_paths_are_accepted_by_legacy_java_tools() {
     let project = root.path().join("Cfg");
     let tool = root.path().join("SIP");
     fs::write(
-        project.join("lgk-vector.json"),
+        project.join("lgk-autosar.json"),
         format!(
             "{{\"project_path\":{},\"tool_path\":{}}}",
             serde_json::to_string(&project).expect("project JSON"),
@@ -988,7 +988,7 @@ fn accepts_legacy_lgk_config_field_names() {
     let project = root.path().join("Cfg");
     let tool = root.path().join("SIP");
     fs::write(
-        project.join("lgk-vector.json"),
+        project.join("lgk-autosar.json"),
         format!(
             "{{\"LGK_project_path\":{},\"LGK_tool_path\":{}}}",
             serde_json::to_string(&project).expect("project JSON"),
@@ -1000,6 +1000,20 @@ fn accepts_legacy_lgk_config_field_names() {
     let config = SessionConfig::load(&project).expect("load legacy session");
     assert_eq!(config.project_path, expected.project_path);
     assert_eq!(config.tool_path, expected.tool_path);
+}
+
+#[test]
+fn accepts_legacy_bridge_config_filename_during_brand_migration() {
+    let (root, expected) = fixture();
+    let project = root.path().join("Cfg");
+    fs::rename(
+        project.join("lgk-autosar.json"),
+        project.join("lgk-vector.json"),
+    )
+    .expect("rename legacy bridge config");
+
+    let config = SessionConfig::load(&project).expect("load legacy filename");
+    assert_eq!(config, expected);
 }
 
 #[test]
@@ -1062,7 +1076,7 @@ fn supports_non_microsar_definitions_and_explicit_tool_selection() {
     )
     .expect("vendor definition");
     fs::write(
-        project.join("lgk-vector.json"),
+        project.join("lgk-autosar.json"),
         format!(
             "{{\"tool_path\":{},\"project_file\":\"GenericPlatform.dpa\",\"davinci_command_path\":\"DaVinci/Exec/DVCfgCmd.exe\"}}",
             serde_json::to_string(&tool).expect("tool JSON"),

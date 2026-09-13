@@ -194,8 +194,18 @@ fn canonical_davinci_command(tool_path: &Path, path: &Path) -> Result<PathBuf> {
 }
 
 fn bridge_config_path(project_directory: &Path) -> PathBuf {
-    // 每个 DaVinci Cfg 目录只读取自己的 LGK-Vector 配置。
-    project_directory.join("lgk-vector.json")
+    // 每个 DaVinci Cfg 目录只读取自己的 LGK-AUTOSAR 配置。
+    let current = project_directory.join("lgk-autosar.json");
+    if current.exists() {
+        return current;
+    }
+    // Existing projects can migrate without an outage. New initializations
+    // always create lgk-autosar.json, so this path is read-only compatibility.
+    let legacy = project_directory.join("lgk-vector.json");
+    if legacy.exists() {
+        return legacy;
+    }
+    current
 }
 
 fn canonical_directory(path: &Path) -> Result<PathBuf> {

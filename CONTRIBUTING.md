@@ -1,6 +1,6 @@
 # Contributing
 
-LGK-Vector accepts small, reviewable changes that can be tested without publishing proprietary AUTOSAR or Vector material.
+LGK-AUTOSAR accepts small, reviewable changes that can be tested without publishing proprietary AUTOSAR or Vector material.
 
 ## Before opening a pull request
 

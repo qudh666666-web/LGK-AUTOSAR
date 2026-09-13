@@ -28,7 +28,8 @@ try {
     $forbiddenFiles = @($tracked | Where-Object {
         $relative = [string]$_
         $extension = [System.IO.Path]::GetExtension($relative).ToLowerInvariant()
-        $forbiddenExtensions -contains $extension -or (Split-Path -Leaf $relative) -ieq 'lgk-vector.json'
+        $forbiddenExtensions -contains $extension -or
+        (Split-Path -Leaf $relative) -iin @('lgk-autosar.json', 'lgk-vector.json')
     })
     if ($forbiddenFiles.Count -ne 0) {
         throw "Forbidden customer/binary/secret file types are tracked: $($forbiddenFiles -join ', ')"

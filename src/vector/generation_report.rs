@@ -241,13 +241,13 @@ mod tests {
     #[test]
     #[ignore = "optional local read-only report check; no vendor fixtures are shipped"]
     fn private_report_check() {
-        let path = std::env::var("LGK_VECTOR_TEST_REPORT").expect("report path");
-        let definition = std::env::var("LGK_VECTOR_TEST_DEFINITION").ok();
+        let path = std::env::var("LGK_AUTOSAR_TEST_REPORT").expect("report path");
+        let definition = std::env::var("LGK_AUTOSAR_TEST_DEFINITION").ok();
         let html = fs::read_to_string(path).unwrap();
         let start = std::time::Instant::now();
         let result = parse_report(&html, definition.as_deref());
         eprintln!("report parse: {:?}; elapsed={:?}", result, start.elapsed());
-        let expect_pass = std::env::var("LGK_VECTOR_TEST_EXPECT_PASS").unwrap() == "true";
+        let expect_pass = std::env::var("LGK_AUTOSAR_TEST_EXPECT_PASS").unwrap() == "true";
         assert_eq!(result.is_ok(), expect_pass);
     }
 }

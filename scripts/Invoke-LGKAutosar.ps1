@@ -1,4 +1,4 @@
-﻿# 人和自动化工具的统一入口：负责准备请求和常驻 Host，
+# 人和自动化工具的统一入口：负责准备请求和常驻 Host，
 # 不直接解析 ECUC，也不直接启动 DaVinci 生成器。
 [CmdletBinding(DefaultParameterSetName = 'Inline')]
 param(
@@ -32,19 +32,19 @@ $OutputEncoding = $utf8NoBom
 # launch paths even when the script itself was supplied with -File.
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ([string]::IsNullOrWhiteSpace($scriptDirectory)) {
-    throw 'Cannot determine the LGK-Vector script location; pass -ExecutablePath explicitly.'
+    throw 'Cannot determine the LGK-AUTOSAR script location; pass -ExecutablePath explicitly.'
 }
 if ([string]::IsNullOrWhiteSpace($ExecutablePath)) {
     # Release skills keep the wrapper beside the matching EXE.  The source
     # tree keeps it under scripts/, so retain that layout as a fallback.
-    $runtimeExecutable = Join-Path $scriptDirectory 'lgk-vector.exe'
-    $rootExecutable = Join-Path $scriptDirectory '..\lgk-vector.exe'
+    $runtimeExecutable = Join-Path $scriptDirectory 'lgk-autosar.exe'
+    $rootExecutable = Join-Path $scriptDirectory '..\lgk-autosar.exe'
     if (Test-Path -LiteralPath $runtimeExecutable -PathType Leaf) {
         $ExecutablePath = $runtimeExecutable
     } elseif (Test-Path -LiteralPath $rootExecutable -PathType Leaf) {
         $ExecutablePath = $rootExecutable
     } else {
-        $ExecutablePath = Join-Path $scriptDirectory '..\target\release\lgk-vector.exe'
+        $ExecutablePath = Join-Path $scriptDirectory '..\target\release\lgk-autosar.exe'
     }
 }
 
@@ -55,7 +55,7 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Bridge executable was not found: $ExecutablePath"
 }
 $executableDirectory = Split-Path -Parent $executable
-$hostExecutable = Join-Path $executableDirectory 'lgk-vector-host.exe'
+$hostExecutable = Join-Path $executableDirectory 'lgk-autosar-host.exe'
 
 function ConvertTo-WindowsArgument {
     # MSVCRT argv 规则：参数含空白或引号时整体加引号；引号前的反斜杠翻倍并
@@ -88,7 +88,7 @@ function Invoke-BridgeExecutable {
     # 终止子进程树并抛错（附已捕获的部分输出）；正常结束返回退出码和标准
     # 输出/错误文本，由调用方沿用原有错误消息格式。工作目录显式取当前
     # PowerShell 位置：.NET Process.Start 不跟随 Push-Location，而 CLI 依赖
-    # 工作目录中的 lgk-vector.json。
+    # 工作目录中的 lgk-autosar.json。
     param(
         [Parameter(Mandatory)][string]$FilePath,
         [Parameter(Mandatory)][string[]]$Arguments,
@@ -109,7 +109,7 @@ function Invoke-BridgeExecutable {
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $processInfo
     if (-not $process.Start()) {
-        throw "Failed to start the LGK-Vector executable: $FilePath"
+        throw "Failed to start the LGK-AUTOSAR executable: $FilePath"
     }
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
@@ -122,7 +122,7 @@ function Invoke-BridgeExecutable {
         $partialStderr = ''
         if ($stdoutTask.Wait(5000)) { $partialStdout = [string]$stdoutTask.Result }
         if ($stderrTask.Wait(5000)) { $partialStderr = [string]$stderrTask.Result }
-        throw ("LGK-Vector executable '{0}' exceeded the {1}s timeout and its process tree was terminated. Partial stdout: {2} Partial stderr: {3}" -f $FilePath, $TimeoutSeconds, $partialStdout, $partialStderr)
+        throw ("LGK-AUTOSAR executable '{0}' exceeded the {1}s timeout and its process tree was terminated. Partial stdout: {2} Partial stderr: {3}" -f $FilePath, $TimeoutSeconds, $partialStdout, $partialStderr)
     }
     $stdoutTask.Wait()
     $stderrTask.Wait()
@@ -147,7 +147,7 @@ function Get-BridgeIdentity([string]$Path) {
     }
     $match = [regex]::Match(
         [string]$output[0],
-        '^(?<name>lgk-vector(?:-host)?) (?<version>\d+\.\d+\.\d+) protocol=(?<protocol>\d+) build=(?<build>dev|[0-9a-f]{7,64})$'
+        '^(?<name>lgk-autosar(?:-host)?) (?<version>\d+\.\d+\.\d+) protocol=(?<protocol>\d+) build=(?<build>dev|[0-9a-f]{7,64})$'
     )
     if (-not $match.Success) {
         throw "Unexpected bridge version output from ${Path}: $($output -join ' ')"
@@ -167,20 +167,20 @@ if ($cliIdentity.Version -ne $hostIdentity.Version -or
     throw "Bridge executable identities do not match: CLI=$($cliIdentity.Version)/p$($cliIdentity.Protocol)/$($cliIdentity.Build), Host=$($hostIdentity.Version)/p$($hostIdentity.Protocol)/$($hostIdentity.Build)"
 }
 
-$pairManifestPath = Join-Path $executableDirectory 'lgk-vector-pair.json'
+$pairManifestPath = Join-Path $executableDirectory 'lgk-autosar-pair.json'
 if (Test-Path -LiteralPath $pairManifestPath -PathType Leaf) {
     $pairManifest = [System.IO.File]::ReadAllText($pairManifestPath) | ConvertFrom-Json -ErrorAction Stop
     $actualCliHash = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash
     $actualHostHash = (Get-FileHash -LiteralPath $hostExecutable -Algorithm SHA256).Hash
     if ($actualCliHash -ine [string]$pairManifest.cli_sha256 -or
         $actualHostHash -ine [string]$pairManifest.host_sha256) {
-        throw 'Bridge executable integrity does not match lgk-vector-pair.json; reinstall one complete release package instead of mixing binaries'
+        throw 'Bridge executable integrity does not match lgk-autosar-pair.json; reinstall one complete release package instead of mixing binaries'
     }
 }
 
 function Start-BridgeHost {
     # 由 Rust CLI 完成 Token、协议、版本和端口身份探测，避免只凭 TCP
-    # 端口可连接就误判为当前 LGK-Vector Host。CLI 通过 bInheritHandles=FALSE
+    # 端口可连接就误判为当前 LGK-AUTOSAR Host。CLI 通过 bInheritHandles=FALSE
     # 的 CreateProcessW 拉起常驻 Host，调用方的管道/控制台句柄不会进入 Host。
     $hostResult = Invoke-BridgeExecutable -FilePath $executable -Arguments @('--start-host') -TimeoutSeconds 60
     if ($hostResult.ExitCode -ne 0) {
@@ -229,14 +229,14 @@ try {
     )
     $requestItems = @($requestObject)
     if ($requestItems.Count -eq 0) {
-        throw 'Request must contain at least one LGK-Vector function call'
+        throw 'Request must contain at least one LGK-AUTOSAR function call'
     }
     foreach ($item in $requestItems) {
         if (($null -eq $item) -or ($item.PSObject.Properties.Name -notcontains 'func')) {
             throw "Every request item must contain a 'func' field"
         }
         if ($allowedFunctions -notcontains [string]$item.func) {
-            throw "Unsupported LGK-Vector function: $($item.func)"
+            throw "Unsupported LGK-AUTOSAR function: $($item.func)"
         }
     }
     $mutatingFunctions = @(
@@ -257,7 +257,7 @@ try {
             $doctorResult = Invoke-BridgeExecutable -FilePath $executable -Arguments @('--doctor', '--request-file', $requestPath) -TimeoutSeconds 90
             if ($doctorResult.ExitCode -ne 0) {
                 $doctorDetail = ("{0} {1}" -f $doctorResult.StdOut, $doctorResult.StdErr).Trim()
-                throw "LGK-Vector doctor failed: $doctorDetail"
+                throw "LGK-AUTOSAR doctor failed: $doctorDetail"
             }
             $doctorResult.StdOut | Write-Output
         } finally {

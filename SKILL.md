@@ -1,28 +1,28 @@
 ---
-name: lgk-vector
-description: Use LGK-Vector for local Vector DaVinci ECUC inspection, verified configuration edits, validation, affected-module generation, resident-host management, or maintenance of the LGK-Vector Rust source itself. Use whenever an AUTOSAR task involves a Vector .dpa project, ECUC ARXML, DaVinci-generated C/H/LSL, or this tool's source and release package.
+name: lgk-autosar
+description: Use LGK-AUTOSAR for local Vector DaVinci ECUC inspection, verified configuration edits, validation, affected-module generation, resident-host management, or maintenance of the LGK-AUTOSAR Rust source itself. Use whenever an AUTOSAR task involves a Vector .dpa project, ECUC ARXML, DaVinci-generated C/H/LSL, or this tool's source and release package.
 ---
 
-# LGK-Vector
+# LGK-AUTOSAR
 
-This skill is also the LGK-Vector source tree. The canonical shared installation
-is `D:\Tools\LGK-Vector`. Codex discovers it through a directory junction at
-`C:\Users\<user>\.codex\skills\lgk-vector`, so every AUTOSAR project reads and
+This skill is also the LGK-AUTOSAR source tree. The canonical shared installation
+is `D:\Tools\LGK-AUTOSAR`. Codex discovers it through a directory junction at
+`C:\Users\<user>\.codex\skills\lgk-autosar`, so every AUTOSAR project reads and
 updates the same source. Do not copy the tool into individual projects.
 
 ## Source and runtime discovery
 
 Resolve the current skill directory. It must contain `Cargo.toml`, `src/`,
 `scripts/`, and `tests/`; on the standard Windows setup it is a junction to
-`D:\Tools\LGK-Vector`. If it is missing, use the central source path explicitly
-or run `scripts/Install-LGKVectorSkill.ps1`. Do not search for or create a
+`D:\Tools\LGK-AUTOSAR`. If it is missing, use the central source path explicitly
+or run `scripts/Install-LGKAutosarSkill.ps1`. Do not search for or create a
 project-local tool copy.
 
-Use `scripts/Invoke-LGKVector.ps1` from the central source as the normal runtime
+Use `scripts/Invoke-LGKAutosar.ps1` from the central source as the normal runtime
 entry. It uses root release binaries when present, otherwise
-`target/release/lgk-vector.exe` and its adjacent host. Read
+`target/release/lgk-autosar.exe` and its adjacent host. Read
 `docs/跨工程接入.md` when connecting another project or when the user asks how
-to install, configure, call, troubleshoot, or maintain LGK-Vector.
+to install, configure, call, troubleshoot, or maintain LGK-AUTOSAR.
 
 ## Linear collaboration
 
@@ -43,7 +43,7 @@ Use Linear read operations by default when a Linear issue/project is supplied
 or a task is clearly tracked there. Create or update issues, comments, status,
 attachments, releases, or review decisions only when the user explicitly asks
 for that external update. Never create duplicate work items merely to record a
-local LGK-Vector task. When writing an approved update, distinguish ECUC edits
+local LGK-AUTOSAR task. When writing an approved update, distinguish ECUC edits
 from generated output and include the exact validation outcome; if a gate is
 pending or failed, state it rather than advancing the issue as complete.
 
@@ -293,7 +293,7 @@ Avoid these previously observed mistakes:
 - Multi-item arrays are read-only. Send `set_ecuc_value`, `edit_file`, `auto_solve_errors`,
   `generate_code`, `update_project`, `import_dbc`, and `shutdown_host` as standalone requests so a batch can
   never leave a partially applied mutation or generation.
-- Keep the central tool at `D:\Tools\LGK-Vector`; remove project-local legacy
+- Keep the central tool at `D:\Tools\LGK-AUTOSAR`; remove project-local legacy
   bridge configs, scripts, and binaries instead of maintaining two tools.
 
 Supported functions are `inspect_ecuc_containers`, `inspect_autosar_model`, `trace_autosar_model`, `diff_ecuc`, `set_ecuc_value`, `find_module`,
@@ -417,7 +417,7 @@ Use `update_project` to run the DPA's registered Project Update inputs. Use
 `import_dbc` with an absolute `source` and a project-relative `registered_path`
 when replacing a DBC already registered by the DPA. Both are standalone,
 mutating requests and require the same DaVinci project to be saved and closed.
-LGK-Vector snapshots the complete Cfg tree and restores it when Project Update
+LGK-AUTOSAR snapshots the complete Cfg tree and restores it when Project Update
 fails, because DaVinci may touch DPA, ECUC and System Description files before
 reporting a converter error. A disk `edit_file` request first closes any
 DaVinci session previously opened by the same resident Host.
@@ -431,7 +431,7 @@ DaVinci session previously opened by the same resident Host.
 DaVinci, so it remains usable while the GUI owns the `.dpa` lock:
 
 ```powershell
-& "<skill-root>\scripts\Invoke-LGKVector.ps1" `
+& "<skill-root>\scripts\Invoke-LGKAutosar.ps1" `
   -ProjectPath "D:\Work\Project\Cfg" `
   -Request '{"func":"inspect_ecuc_containers","module":"Com","container":"ComSignal","short_name_regex":"^MySignal$","params":["ComBitPosition"]}'
 ```
@@ -442,7 +442,7 @@ same batch.
 
 ## Project configuration
 
-Place `lgk-vector.json` in the exact DaVinci Cfg directory:
+Place `lgk-autosar.json` in the exact DaVinci Cfg directory:
 
 ```json
 {
@@ -453,12 +453,12 @@ Place `lgk-vector.json` in the exact DaVinci Cfg directory:
 The project path is derived from the directory containing the JSON. If
 discovery is ambiguous, also set `project_file` (relative to that directory is
 preferred) and `davinci_command_path` (relative to `tool_path` or absolute).
-Use `scripts/Initialize-LGKVectorProject.ps1` for a new project and require its
+Use `scripts/Initialize-LGKAutosarProject.ps1` for a new project and require its
 static doctor result before editing. Doctor resolves paths and request shape
 but does not launch DaVinci or prove that generation succeeds. The legacy keys `LGK_project_path` and
 `LGK_tool_path` remain accepted for existing projects.
 
-## Maintaining LGK-Vector itself
+## Maintaining LGK-AUTOSAR itself
 
 For source changes, inspect the relevant Rust module and focused tests before
 editing. Keep the tool MCU- and SIP-independent: discover DPA module files and
@@ -472,9 +472,9 @@ After a source change:
 3. Run `cargo build --release --locked` when publishing binaries.
 4. Update `CHANGELOG.md` with date, implementation commit, purpose,
    validation, and limitations.
-5. Commit tool changes only in the central LGK-Vector repository.
+5. Commit tool changes only in the central LGK-AUTOSAR repository.
 6. In the AUTOSAR repository, commit only its own ECUC and generated outputs;
-   never vendor the LGK-Vector source or stage unrelated build output.
+   never vendor the LGK-AUTOSAR source or stage unrelated build output.
 
 Do not add customer DPA/ARXML/DBC files, Vector SIP content, licenses,
 proprietary binaries, extracted vendor scripts, credentials, or generated

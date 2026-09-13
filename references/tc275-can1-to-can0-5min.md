@@ -59,7 +59,7 @@ full-project generation, edit generated C by hand, or guess a replacement pin.
 | 0:00–0:30 | Record Git state, read schematic and current controller/Port source. | Mapping above matches the actual board. |
 | 0:30–1:30 | Make the two source changes: Can ECUC and Port.xdm. | Narrow diffs show only intended controller/pin values. |
 | 1:30–2:15 | Generate only `Port_AurixAS403` in EB tresos. | Generator exits with zero errors/warnings. |
-| 2:15–3:00 | Generate only `Can` through LGK-Vector. | Newest report says Can validation/generation succeeded. |
+| 2:15–3:00 | Generate only `Can` through LGK-AUTOSAR. | Newest report says Can validation/generation succeeded. |
 | 3:00–3:45 | Sync only Can and Port generated files used by the compile project. | Destination files changed as expected. |
 | 3:45–4:30 | Assert `Can_InitPortSel` and three Port20 pin modes. | All generated values match this guide. |
 | 4:30–5:00 | Review Git scope and hand off for the user's build/bus test. | No unrelated file is staged; status is recorded. |
@@ -84,9 +84,9 @@ Never clean, reset, or stage existing user changes. Generated build folders,
 IDE metadata, logs, and a user's `.cproject` edit are not part of this repair
 unless the user explicitly puts them in scope.
 
-### 2. Change Can ECUC through LGK-Vector
+### 2. Change Can ECUC through LGK-AUTOSAR
 
-Save and close the DaVinci project before a mutating request. Use LGK-Vector to
+Save and close the DaVinci project before a mutating request. Use LGK-AUTOSAR to
 inspect the actual controller container first, then make one narrow `edit_file`
 request with exact `expected` values. The source normally lives at:
 
@@ -112,7 +112,7 @@ is Node0. `b_001` is the hardware RX multiplexer selection for P20.7
 Example inspection call (adjust the container name only after inspection):
 
 ```powershell
-& 'C:\Users\l\.codex\skills\lgk-vector\scripts\Invoke-LGKVector.ps1' `
+& 'C:\Users\l\.codex\skills\lgk-autosar\scripts\Invoke-LGKAutosar.ps1' `
   -ProjectPath 'D:\Project\AutosarSpace\Tc275-V1.3\Proj_Config\Bsw_Config\Cfg' `
   -Request '{"func":"inspect_ecuc_containers","module":"Can","container":"CanController","params":["CanControllerId","CanControllerBaseAddress","CanControllerRxInputSelection"]}'
 ```
@@ -168,12 +168,12 @@ The proven run completed in approximately four seconds. Retain the console
 output as evidence. Do not run an unrelated MCAL full generation to repair only
 these three pins.
 
-### 2. Generate Can only with LGK-Vector
+### 2. Generate Can only with LGK-AUTOSAR
 
 After the DaVinci GUI is closed, submit one standalone request:
 
 ```powershell
-& 'C:\Users\l\.codex\skills\lgk-vector\scripts\Invoke-LGKVector.ps1' `
+& 'C:\Users\l\.codex\skills\lgk-autosar\scripts\Invoke-LGKAutosar.ps1' `
   -ProjectPath 'D:\Project\AutosarSpace\Tc275-V1.3\Proj_Config\Bsw_Config\Cfg' `
   -Request '{"func":"generate_code","module":"Can"}'
 ```
@@ -225,7 +225,7 @@ $request = @{
     }
   )
 } | ConvertTo-Json -Compress -Depth 6
-& 'C:\Users\l\.codex\skills\lgk-vector\scripts\Invoke-LGKVector.ps1' `
+& 'C:\Users\l\.codex\skills\lgk-autosar\scripts\Invoke-LGKAutosar.ps1' `
   -ProjectPath 'D:\Project\AutosarSpace\Tc275-V1.3\Proj_Config\Bsw_Config\Cfg' `
   -Request $request
 ```
