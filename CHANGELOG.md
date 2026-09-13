@@ -2,6 +2,36 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## v0.3.11 - 2026-09-13
+
+- Implementation commit: `ebb2852`. Added `set_ecuc_value` to doctor, resident
+  Host, CLI, PowerShell wrapper, source/release Skills and onboarding/package
+  self-tests. Existing parameter values and references can now be changed by
+  real DPA module, container instance path, definition name, exact saved
+  `expected`, and new `value`; no XML lines are required in the request.
+- The operation requires one direct, unique semantic target. It compares a full
+  parsed XML-tree result with the byte-preserving raw location, escapes the new
+  text, reparses and semantically re-locates the candidate, then rechecks the
+  original bytes and uses the existing same-directory atomic replacement.
+  Commented-out XML cannot become a write target. BOM, line endings, indentation,
+  comments, attributes, ordering and every unrelated byte remain unchanged.
+- Missing containers/values, duplicate paths/definitions and stale expected
+  values fail without writing and have stable ECUC_CONTAINER_NOT_FOUND,
+  ECUC_VALUE_NOT_FOUND, ECUC_VALUE_AMBIGUOUS or
+  ECUC_VALUE_PRECONDITION_FAILED diagnostics. New values are limited to 4096
+  Unicode characters; returned old/new values are capped at 512 and only emit
+  truncation flags when applicable. Mutating batch and open-owned-GUI protections
+  are the same as `edit_file`.
+- Verified: release build produced matching v0.3.11 CLI/Host; 52 Rust tests
+  passed and one optional private-report test was ignored; Clippy `-D warnings`,
+  changed-file rustfmt and diff checks passed; the final onboarding suite passed
+  62 assertions twice; packaged EXE self-test passed 14 assertions; package
+  manifest passed 13; current-content and dependency-license guards passed.
+- Limits: changes only an existing direct parameter `<VALUE>` or reference
+  `<VALUE-REF>`. Creation/deletion, container structure and self-closing empty
+  values still require a narrow `edit_file`. No live DaVinci operation, customer
+  project mutation, public push/tag/Release or public snapshot sync was run.
+
 ## v0.3.10 - 2026-09-13
 
 - Implementation commit: `53bd44d`. Borrowed the stable path plus
