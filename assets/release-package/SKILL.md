@@ -29,6 +29,11 @@ description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修�
 
 ## 必须遵守
 
+- v0.3.9 的交付校验失败已包含失败项和文本明细，不为相同信息再跑一次。
+  列表最多 8 项，每类文本最多 8 条，超出时按总数缩小查询范围。
+- 模块找不到时先检查错误中的当前工程候选；候选仅为提示，不自动改名生成。
+  错误仍以异常/非零退出返回，结构化 JSON 位于错误详情，成功格式保持原样。
+
 - 能使用 LGK-Vector 完成的 DaVinci ECUC 改动，不要手工改写 ARXML。
 - `edit_file`、`import_dbc`、`update_project`、`auto_solve_errors`、
   `generate_code` 和 `shutdown_host` 必须各自单独发送，不能混在数组请求中。

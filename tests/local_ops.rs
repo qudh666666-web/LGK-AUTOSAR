@@ -392,6 +392,18 @@ fn reports_and_enforces_unsynchronized_or_invalid_delivery() {
     let error = ops::verify_delivery::execute(&config, &request)
         .expect_err("default enforcement must reject stale compiled output");
     assert!(error.to_string().contains("delivery verification failed"));
+    let failure: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+    assert_eq!(failure["code"], "DELIVERY_VERIFICATION_FAILED");
+    assert_eq!(failure["success"], false);
+    assert_eq!(failure["details"]["failed_checks"][0]["check_index"], 0);
+    assert_eq!(
+        failure["details"]["failed_checks"][0]["forbidden_found"],
+        json!(["CanIsr_1"])
+    );
+    assert_eq!(
+        failure["details"]["failed_checks"][0]["synchronized"],
+        false
+    );
 
     let mut diagnostic = request;
     diagnostic["enforce"] = json!(false);
@@ -433,6 +445,59 @@ fn confines_delivery_verification_to_the_declared_project_root() {
     assert!(traversal_error
         .to_string()
         .contains("cannot contain parent"));
+}
+
+#[test]
+fn delivery_failure_limits_output_and_preserves_original_check_indices() {
+    let (root, config) = fixture();
+    fs::write(root.path().join("good.txt"), "content").unwrap();
+    let patterns: Vec<_> = (0..12).map(|i| format!("missing\"{i}\n")).collect();
+    let mut checks = vec![json!({"path": "good.txt"})];
+    for i in 0..10 {
+        checks.push(json!({"path": format!("missing{i}.txt"), "must_contain": patterns}));
+    }
+    let error =
+        ops::verify_delivery::execute(&config, &json!({"root": root.path(), "checks": checks}))
+            .unwrap_err();
+    let failure: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+    let details = &failure["details"];
+    assert_eq!(details["failed_count"], 10);
+    assert_eq!(details["checks_truncated"], true);
+    assert_eq!(details["failed_checks"].as_array().unwrap().len(), 8);
+    assert_eq!(details["failed_checks"][0]["check_index"], 1);
+    assert_eq!(details["failed_checks"][0]["missing_required_count"], 12);
+    assert_eq!(
+        details["failed_checks"][0]["missing_required"]
+            .as_array()
+            .unwrap()
+            .len(),
+        8
+    );
+    assert_eq!(
+        details["failed_checks"][0]["missing_required"][0],
+        patterns[0]
+    );
+    assert!(!error.to_string().contains("good.txt"));
+}
+
+#[test]
+fn unknown_module_returns_candidates_without_changing_generation_scope() {
+    let (_root, config) = fixture();
+    for request in [
+        json!({"func":"find_module", "module":"Com_driver"}),
+        json!({"func":"generate_code", "module":"Com_driver"}),
+    ] {
+        let error = CommandDispatcher::new()
+            .dispatch_batch(&config, &request.to_string())
+            .unwrap_err();
+        let failure: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+        assert_eq!(failure["code"], "MODULE_NOT_FOUND");
+        assert_eq!(failure["details"]["candidates"], json!(["Com"]));
+    }
+    assert_eq!(
+        ops::find_module::execute(&config, &json!({"module_name":"com"})).unwrap()["module"],
+        "Com"
+    );
 }
 
 #[test]

@@ -121,7 +121,7 @@ try {
     Assert-True ($doctor.valid -eq $true) 'initializer doctor must report valid=true'
     Assert-True ($doctor.preflight -eq 'static') 'doctor must label itself as a static preflight'
     Assert-True ($doctor.davinci_executed -eq $false) 'doctor must not claim that DaVinci was executed'
-    Assert-True ($doctor.version -eq '0.3.8') 'initializer must use the current release binary'
+    Assert-True ($doctor.version -eq '0.3.9') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
     $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
@@ -243,6 +243,18 @@ $ErrorActionPreference = 'Stop'
     Assert-True ($delivery.passed -eq $true) 'verify_delivery must accept synchronized generated output'
     Assert-True ($delivery.checks[0].synchronized -eq $true) 'verify_delivery must compare generated and compiled files'
 
+    $failureRequest = @{ func = 'verify_delivery'; root = $temporaryRoot; checks = @(@{path = 'missing-output.h'; must_contain = @('EXPECTED_SYMBOL')}) } | ConvertTo-Json -Depth 5 -Compress
+    $failureText = $null
+    try {
+        & $wrapper -ProjectPath $project -ExecutablePath $executable -Request $failureRequest | Out-Null
+    } catch {
+        $failureText = $_.Exception.Message
+    }
+    Assert-True ($null -ne $failureText) 'structured verification failure must still fail the wrapper'
+    $failure = $failureText.Substring($failureText.IndexOf('{')) | ConvertFrom-Json
+    Assert-True ($failure.code -eq 'DELIVERY_VERIFICATION_FAILED') 'failure code must survive Host CLI and wrapper'
+    Assert-True ($failure.details.failed_checks[0].missing_required[0] -eq 'EXPECTED_SYMBOL') 'first failure must include missing symbol without a second request'
+
     $bomRequest = Join-Path $temporaryRoot 'request-with-bom.json'
     $bomEncoding = [System.Text.UTF8Encoding]::new($true)
     $bomBytes = $bomEncoding.GetPreamble() + $bomEncoding.GetBytes('{"func":"find_module","module":"Com"}')
@@ -257,9 +269,16 @@ $ErrorActionPreference = 'Stop'
 
     $failingRequest = Join-Path $temporaryRoot 'failing-request.json'
     Write-Utf8 -Path $failingRequest -Content '{"func":"find_module","module":"Missing"}'
-    Assert-Fails -ExpectedText "request: $failingRequest" -Action {
+    $failureText = $null
+    try {
         & $wrapper -ProjectPath $project -ExecutablePath $executable -RequestFile $failingRequest
+    } catch {
+        $failureText = $_.Exception.Message
     }
+    Assert-True ($null -ne $failureText -and $failureText.Contains("request: $failingRequest")) 'module failure must preserve request context'
+    $failure = $failureText.Substring($failureText.IndexOf('{')) | ConvertFrom-Json
+    Assert-True ($failure.code -eq 'MODULE_NOT_FOUND') 'unknown module must have a stable error code'
+    Assert-True ($failure.details.candidates -contains 'Com') 'unknown module must return a real project candidate'
 
     Assert-Fails -ExpectedText 'file changed' -Action {
         $request = [ordered]@{
@@ -331,7 +350,7 @@ $ErrorActionPreference = 'Stop'
     $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKVector.ps1'
     $packageDoctorOutput = @(& $packageInitializer -ProjectPath $packageProject -ToolPath $tool)
     $packageDoctor = (($packageDoctorOutput | Out-String) | ConvertFrom-Json)
-    Assert-True ($packageDoctor.version -eq '0.3.8') 'packaged initializer must use packaged binaries by default'
+    Assert-True ($packageDoctor.version -eq '0.3.9') 'packaged initializer must use packaged binaries by default'
 
     $activeWrapper = $packageWrapper
     $activeProject = $packageProject

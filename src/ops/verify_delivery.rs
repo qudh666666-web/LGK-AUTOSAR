@@ -16,11 +16,10 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     if !requested_root.is_absolute() {
         bail!("root must be an absolute project directory");
     }
-    let root = normalize_canonical_path(
-        requested_root
-            .canonicalize()
-            .with_context(|| format!("verification root not found: {}", requested_root.display()))?,
-    );
+    let root =
+        normalize_canonical_path(requested_root.canonicalize().with_context(|| {
+            format!("verification root not found: {}", requested_root.display())
+        })?);
     if !root.is_dir() {
         bail!("verification root is not a directory: {}", root.display());
     }
@@ -61,18 +60,33 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     }
 
     let passed = failed_paths.is_empty();
-    let response = json!({
-        "root": root,
-        "passed": passed,
-        "checks": results
-    });
     if !passed && enforce {
-        bail!(
-            "delivery verification failed for: {}; rerun with enforce=false to inspect structured details",
-            failed_paths.join(", ")
-        );
+        let failures: Vec<_> = results
+            .iter()
+            .enumerate()
+            .filter(|(_, result)| result["passed"] == false)
+            .take(8)
+            .map(|(index, result)| {
+                let mut detail = result.clone();
+                detail["check_index"] = json!(index);
+                for key in ["missing_required", "forbidden_found"] {
+                    if let Some(items) = result[key].as_array() {
+                        detail[format!("{key}_count")] = json!(items.len());
+                        detail[key] = json!(items.iter().take(8).collect::<Vec<_>>());
+                    }
+                }
+                detail
+            })
+            .collect();
+        return Err(crate::diagnostic::failure(
+            "DELIVERY_VERIFICATION_FAILED",
+            "delivery verification failed",
+            "checks",
+            json!({"passed": false, "failed_count": failed_paths.len(),
+                "failed_checks": failures, "checks_truncated": failed_paths.len() > 8}),
+        ));
     }
-    Ok(response)
+    Ok(json!({"root": root, "passed": passed, "checks": results}))
 }
 
 fn verify_one(root: &Path, check: &Value) -> Result<Value> {
@@ -93,14 +107,12 @@ fn verify_one(root: &Path, check: &Value) -> Result<Value> {
         .flatten();
     let exists = content.is_some();
     let same_as_exists = same_as_path.as_ref().map(|_| comparison.is_some());
-    let synchronized = same_as_path
-        .as_ref()
-        .map(|_| {
-            content
-                .as_ref()
-                .zip(comparison.as_ref())
-                .is_some_and(|(left, right)| left == right)
-        });
+    let synchronized = same_as_path.as_ref().map(|_| {
+        content
+            .as_ref()
+            .zip(comparison.as_ref())
+            .is_some_and(|(left, right)| left == right)
+    });
 
     let missing_required = required
         .iter()
@@ -142,9 +154,10 @@ fn resolve_relative_file(root: &Path, value: &str) -> Result<PathBuf> {
     if relative.is_absolute() || value.trim().is_empty() {
         bail!("verification paths must be non-empty paths relative to root: {value}");
     }
-    if relative.components().any(|component| {
-        !matches!(component, Component::Normal(_) | Component::CurDir)
-    }) {
+    if relative
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+    {
         bail!("verification paths cannot contain parent, root, or prefix components: {value}");
     }
     let joined = root.join(relative);
@@ -166,7 +179,9 @@ fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error).with_context(|| format!("cannot inspect {}", path.display())),
+        Err(error) => {
+            return Err(error).with_context(|| format!("cannot inspect {}", path.display()))
+        }
     };
     if !metadata.is_file() {
         bail!("verification path is not a file: {}", path.display());

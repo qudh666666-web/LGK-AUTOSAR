@@ -306,8 +306,18 @@ accepted.
 contains the configured DaVinci Cfg directory, then use root-relative `path`
 and optional `same_as` values. It compares exact file bytes and checks exact
 required/forbidden byte strings. Enforcement defaults to true, so a missing,
-stale, or invalid compiled file makes the request fail; use `enforce:false`
-only to retrieve diagnostic JSON, never as acceptance evidence.
+stale or invalid file still fails the request. From v0.3.9 the error already
+contains compact JSON details: code DELIVERY_VERIFICATION_FAILED, field checks,
+failed_checks with zero-based check_index, synchronization and missing/forbidden
+patterns. Do not re-run just to retrieve the same diagnostics. At most 8 failed
+checks and 8 patterns per kind are included, with counts/truncation indicators;
+use targeted checks or enforce:false only if more detail is actually needed.
+Only passed:true is acceptance evidence.
+
+Missing/unknown modules return MODULE_REQUIRED / MODULE_NOT_FOUND JSON inside
+the existing error channel. Unknown-module candidates come from the current DPA
+(up to 8); select the actual module after inspection, never auto-apply a guessed
+replacement. Other errors retain their existing text; successful output is unchanged.
 
 ```json
 {
