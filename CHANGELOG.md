@@ -2,6 +2,30 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## v0.3.9 - 2026-09-13
+
+- Implementation commit: `8fe352d`. Borrowed the structured-field diagnostic
+  idea from claude-autosar, independently implemented in Rust with no copied
+  source or new dependency. Sources and adoption decisions: docs/开源借鉴记录.md.
+- Strict verify_delivery failures now include compact JSON with stable code,
+  original zero-based check_index, missing files, synchronization and required/
+  forbidden pattern failures. No enforce:false rerun is needed for the usual
+  diagnostic. Limits: 8 failed checks, 8 patterns per kind, counts and truncation
+  indicators. Passing checks are omitted from the strict failure response.
+- Missing/unknown modules return MODULE_REQUIRED / MODULE_NOT_FOUND. Unknown
+  names include up to 8 real DPA candidates; suggestions never silently select
+  a module for generation. Case-insensitive matching and module_name remain.
+- Existing nonzero exits and CLI/PowerShell exception envelopes are retained;
+  JSON is in the error detail, not successful stdout. Other errors remain text.
+  Normal successful responses and dependency versions are unchanged.
+- Verified: 43 Rust tests passed (one optional private-report test skipped),
+  Clippy -D warnings, changed-file formatting and git diff checks passed;
+  Build-LGKVector.ps1 rebuilt local v0.3.9 CLI/Host; 56 onboarding assertions
+  prove JSON details survive the Host/CLI/wrapper and failures still fail;
+  13 package assertions and current-content guard passed.
+- Limits: no live DaVinci generation or LLM-token benchmark was performed.
+  No customer project, public snapshot, GitHub push/tag/Release was changed.
+
 ## v0.3.8 - 2026-09-13
 
 - Implementation commit: `4e1e39a`.
