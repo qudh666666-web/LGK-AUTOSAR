@@ -2,6 +2,36 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## v0.3.8 - 2026-09-13
+
+- Implementation commit: `4e1e39a`.
+- Generation now checks the single new/rewritten GenerationReport.html in
+  DPA Folders/Logs before returning passed:true. It requires zero fatal/errors,
+  successful selected generator and GENERATION phase, matching the actual ECUC
+  definition rather than a display/package name. SUCCESSFUL and WARNING report
+  summaries are supported, but do not waive the selected-generator checks.
+  Discovery only reads metadata within two log-directory levels (8192 entries);
+  only the changed report is read, capped at 32 MiB. Missing/stale/ambiguous or
+  unknown report formats fail acceptance without retrying generation.
+- generate_code requires module or the existing module_name alias. Full
+  generation remains explicit module:"all". Existing callers that omitted
+  module must migrate; optional-module queries are unchanged.
+- edit_file writes/syncs a unique same-directory temporary file, rechecks the
+  original bytes and uses rename replacement with no copy-over fallback.
+  This is not an external-writer lock or a power-loss durability guarantee;
+  per-file ACLs, alternate streams and hard-link identity are not preserved.
+- Verification: 40 Rust tests passed (one optional private-report test ignored
+  by default); that private check was separately run on two existing local
+  reports and correctly accepted success/rejected validation error. Debug
+  parser timings were approximately 10/27 ms, excluding generation and report
+  discovery. Clippy -D warnings and rustfmt checks passed using already installed
+  private components. Release build passed via Build-LGKVector.ps1; onboarding
+  51 assertions, package manifest 13 assertions and current-content guard passed.
+- Limits: no live DaVinci generation was run and no customer project was changed.
+  Report compatibility is based on the locally inspected HTML layout and
+  synthetic regression cases, not every DaVinci version. Local binaries are
+  v0.3.8 build=dev; no public snapshot sync, push, tag or Release was performed.
+
 ## v0.3.7 - 2026-08-29
 
 - Core: the resident Host is now spawned through `CreateProcessW` with
