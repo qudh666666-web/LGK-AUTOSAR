@@ -296,11 +296,29 @@ Avoid these previously observed mistakes:
 - Keep the central tool at `D:\Tools\LGK-Vector`; remove project-local legacy
   bridge configs, scripts, and binaries instead of maintaining two tools.
 
-Supported functions are `inspect_ecuc_containers`, `find_module`,
+Supported functions are `inspect_ecuc_containers`, `diff_ecuc`, `find_module`,
 `find_module_template`, `get_param_definition`, `locate_container`,
 `verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
 `update_project`, `import_dbc`, and `shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
 accepted.
+
+`diff_ecuc` compares one concrete module across two `.arxml` files contained by
+the configured project. It is local and read-only, accepts project-relative or
+absolute contained paths, and returns only semantic parameter/reference
+changes. Prefer a narrow `path_prefix` and the default `limit:32`; the hard
+limit is 256 changes and each old/new value is capped at 512 Unicode characters
+with a truncation flag. Duplicate semantic paths fail instead of being guessed.
+
+```json
+{
+  "func": "diff_ecuc",
+  "module": "Com",
+  "left": "Config\\ECUC\\Com_before.arxml",
+  "right": "Config\\ECUC\\Com_after.arxml",
+  "path_prefix": "Com/ComConfig/VehicleSpeed",
+  "limit": 16
+}
+```
 
 `verify_delivery` is a local read-only gate. Pass an absolute `root` that
 contains the configured DaVinci Cfg directory, then use root-relative `path`

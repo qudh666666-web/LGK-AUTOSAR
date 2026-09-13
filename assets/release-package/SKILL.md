@@ -40,10 +40,13 @@ description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修�
 - `auto_solve_errors` 必须先有最新错误列表、用户明确同意，并传入
   `confirmed:true`。
 - `import_dbc` 或 `update_project` 前，保存并关闭 DaVinci GUI。
-- 仅使用支持的函数：`inspect_ecuc_containers`、`find_module`、
+- 仅使用支持的函数：`inspect_ecuc_containers`、`diff_ecuc`、`find_module`、
   `find_module_template`、`get_param_definition`、`locate_container`、
   `verify_delivery`、`edit_file`、`get_errors_list`、`auto_solve_errors`、`generate_code`、
   `update_project`、`import_dbc`、`shutdown_host`。
+- 比较两个工程内 ECUC 快照时用 `diff_ecuc`。必须指定一个实际模块和两份
+  `.arxml`，优先加 `path_prefix`；默认最多 32 项，硬上限 256 项，单个值最多
+  返回 512 个 Unicode 字符。重复语义路径会拒绝比较，不会猜测配对。
 
 ## 示例
 

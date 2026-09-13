@@ -121,7 +121,7 @@ try {
     Assert-True ($doctor.valid -eq $true) 'initializer doctor must report valid=true'
     Assert-True ($doctor.preflight -eq 'static') 'doctor must label itself as a static preflight'
     Assert-True ($doctor.davinci_executed -eq $false) 'doctor must not claim that DaVinci was executed'
-    Assert-True ($doctor.version -eq '0.3.9') 'initializer must use the current release binary'
+    Assert-True ($doctor.version -eq '0.3.10') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
     $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
@@ -223,6 +223,22 @@ $ErrorActionPreference = 'Stop'
     $inspect = (($inspectOutput | Out-String) | ConvertFrom-Json)
     Assert-True (@($inspect).Count -eq 1) 'inspect must return one configured signal'
     Assert-True ([string]$inspect.values.ComBitPosition -eq '8') 'inspect must return ComBitPosition=8'
+
+    $diffRight = Join-Path $project 'Config\ECUC\Public_Com_changed.arxml'
+    Write-Utf8 -Path $diffRight -Content ([IO.File]::ReadAllText($ecuc).Replace('<VALUE>8</VALUE>', '<VALUE>16</VALUE>'))
+    $diffRequest = [ordered]@{
+        func = 'diff_ecuc'
+        module = 'Com'
+        left = 'Config\ECUC\Public_Com_ecuc.arxml'
+        right = 'Config\ECUC\Public_Com_changed.arxml'
+        path_prefix = 'Com/ComConfig/PublicSignal'
+        limit = 1
+    } | ConvertTo-Json -Compress
+    $diffOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request $diffRequest)
+    $diff = (($diffOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($diff.total -eq 1 -and $diff.counts.modify -eq 1) 'diff_ecuc must report one semantic modification'
+    Assert-True ($diff.changes[0].old -eq '8' -and $diff.changes[0].new -eq '16') 'diff_ecuc must return compact old/new values'
+    Assert-True ($diff.truncated -eq $false) 'diff_ecuc must not mark a complete bounded result as truncated'
 
     $generatedDelivery = Join-Path $temporaryRoot 'Generated\Com_Cfg.h'
     $compiledDelivery = Join-Path $temporaryRoot 'Proj_Code\Com_Cfg.h'
@@ -350,7 +366,7 @@ $ErrorActionPreference = 'Stop'
     $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKVector.ps1'
     $packageDoctorOutput = @(& $packageInitializer -ProjectPath $packageProject -ToolPath $tool)
     $packageDoctor = (($packageDoctorOutput | Out-String) | ConvertFrom-Json)
-    Assert-True ($packageDoctor.version -eq '0.3.9') 'packaged initializer must use packaged binaries by default'
+    Assert-True ($packageDoctor.version -eq '0.3.10') 'packaged initializer must use packaged binaries by default'
 
     $activeWrapper = $packageWrapper
     $activeProject = $packageProject

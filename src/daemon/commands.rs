@@ -100,6 +100,9 @@ impl CommandDispatcher {
             "verify_delivery" => {
                 ops::verify_delivery::execute(config, request)?;
             }
+            "diff_ecuc" => {
+                ops::diff_ecuc::execute(config, request)?;
+            }
             "edit_file" => ops::edit_file::validate(config, request)?,
             "get_errors_list" => {
                 optional_module(request)?;
@@ -153,6 +156,7 @@ impl CommandDispatcher {
             "inspect_ecuc_containers" => ops::inspect_ecuc_containers::execute(config, request),
             "locate_container" => ops::locate_container::execute(config, request),
             "verify_delivery" => ops::verify_delivery::execute(config, request),
+            "diff_ecuc" => ops::diff_ecuc::execute(config, request),
             "edit_file" => {
                 // A previous get_errors/generate request may have left DaVinci's
                 // in-memory project open. Close that owned session before a

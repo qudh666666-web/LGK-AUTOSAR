@@ -18,7 +18,7 @@ run PowerShell.
 
 ## Safe ECUC workflow
 
-- Inspect first: use `find_module`, `inspect_ecuc_containers`,
+- Inspect first: use `find_module`, `inspect_ecuc_containers`, `diff_ecuc`,
   `find_module_template`, and `get_param_definition` before proposing a change.
 - For DaVinci configuration, use LGK-Vector requests rather than manually
   editing ARXML. Use `edit_file` only for a scoped, reviewed text change with

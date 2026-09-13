@@ -147,6 +147,13 @@ try {
     $inspect = (($inspectOutput | Out-String) | ConvertFrom-Json)
     Assert-True ([string]$inspect.values.ComBitPosition -eq '8') '已保存的 ECUC 参数值读取错误'
 
+    $rightEcuc = Join-Path $project 'Config\ECUC\SelfTest_Com_changed.arxml'
+    $leftEcuc = Join-Path $project 'Config\ECUC\SelfTest_Com_ecuc.arxml'
+    Write-Utf8 -Path $rightEcuc -Content ([IO.File]::ReadAllText($leftEcuc).Replace('<VALUE>8</VALUE>', '<VALUE>16</VALUE>'))
+    $diffOutput = @(& $wrapper -ProjectPath $project -Request '{"func":"diff_ecuc","module":"Com","left":"Config\\ECUC\\SelfTest_Com_ecuc.arxml","right":"Config\\ECUC\\SelfTest_Com_changed.arxml","limit":1}')
+    $diff = (($diffOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($diff.total -eq 1 -and $diff.changes[0].old -eq '8' -and $diff.changes[0].new -eq '16') 'ECUC 语义差异结果不正确'
+
     & $wrapper -ProjectPath $project -Request '{"func":"shutdown_host"}' | Out-Null
     $hostStarted = $false
     Assert-True (-not (Test-Port 32483) -and -not (Test-Port 32484)) 'shutdown 后 Host 端口没有释放'

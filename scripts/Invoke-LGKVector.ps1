@@ -207,6 +207,7 @@ try {
     # this list exists only to reject misspelled functions before Host startup.
     $allowedFunctions = @(
         'inspect_ecuc_containers',
+        'diff_ecuc',
         'find_module',
         'find_bsw_module',
         'find_module_template',

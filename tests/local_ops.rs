@@ -501,6 +501,104 @@ fn unknown_module_returns_candidates_without_changing_generation_scope() {
 }
 
 #[test]
+fn diffs_ecuc_values_semantically_with_bounded_output() {
+    let (_root, config) = fixture();
+    let left = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let right = config
+        .project_path
+        .join("Config/ECUC/Test_Com_changed.arxml");
+    let changed = fs::read_to_string(&left)
+        .unwrap()
+        .replace("<VALUE>8</VALUE>", "<VALUE>16</VALUE>")
+        .replace(
+            "            </PARAMETER-VALUES>",
+            r#"            </PARAMETER-VALUES>
+            <REFERENCE-VALUES>
+              <ECUC-REFERENCE-VALUE>
+                <DEFINITION-REF DEST="ECUC-REFERENCE-DEF">/MICROSAR/Com/ComConfig/ComSignal/ComTargetRef</DEFINITION-REF>
+                <VALUE-REF DEST="ECUC-CONTAINER-VALUE">/Target/One</VALUE-REF>
+              </ECUC-REFERENCE-VALUE>
+            </REFERENCE-VALUES>"#,
+        );
+    fs::write(&right, changed).unwrap();
+
+    let result = ops::diff_ecuc::execute(
+        &config,
+        &json!({
+            "module": "com",
+            "left": "Config/ECUC/Test_Com_ecuc.arxml",
+            "right": right,
+            "path_prefix": "Com/ComConfig/SignalA",
+            "limit": 1
+        }),
+    )
+    .unwrap();
+    assert_eq!(result["total"], 2);
+    assert_eq!(
+        result["counts"],
+        json!({"add": 1, "modify": 1, "delete": 0})
+    );
+    assert_eq!(result["truncated"], true);
+    assert_eq!(result["changes"].as_array().unwrap().len(), 1);
+    assert_eq!(result["changes"][0]["op"], "modify");
+    assert_eq!(result["changes"][0]["old"], "8");
+    assert_eq!(result["changes"][0]["new"], "16");
+
+    let reverse = ops::diff_ecuc::execute(
+        &config,
+        &json!({"module":"Com", "left":right, "right":left, "limit":32}),
+    )
+    .unwrap();
+    assert_eq!(
+        reverse["counts"],
+        json!({"add": 0, "modify": 1, "delete": 1})
+    );
+}
+
+#[test]
+fn diff_ecuc_rejects_duplicate_paths_and_files_outside_project() {
+    let (root, config) = fixture();
+    let left = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let duplicate = config
+        .project_path
+        .join("Config/ECUC/Test_Com_duplicate.arxml");
+    let original = fs::read_to_string(&left).unwrap();
+    let parameter_start = original
+        .find("              <ECUC-NUMERICAL-PARAM-VALUE>")
+        .unwrap();
+    let relative_end = original[parameter_start..]
+        .find("              </ECUC-NUMERICAL-PARAM-VALUE>")
+        .unwrap();
+    let parameter_end =
+        parameter_start + relative_end + "              </ECUC-NUMERICAL-PARAM-VALUE>".len();
+    let duplicate_block = &original[parameter_start..parameter_end];
+    fs::write(
+        &duplicate,
+        original.replacen(
+            duplicate_block,
+            &format!("{duplicate_block}\n{duplicate_block}"),
+            1,
+        ),
+    )
+    .unwrap();
+    let error = ops::diff_ecuc::execute(
+        &config,
+        &json!({"module":"Com", "left":left, "right":duplicate}),
+    )
+    .unwrap_err();
+    let failure: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+    assert_eq!(failure["code"], "ECUC_DIFF_AMBIGUOUS_PATH");
+
+    let outside = root.path().join("outside.arxml");
+    fs::write(&outside, original).unwrap();
+    assert!(ops::diff_ecuc::execute(
+        &config,
+        &json!({"module":"Com", "left":outside, "right":left}),
+    )
+    .is_err());
+}
+
+#[test]
 fn doctor_rejects_missing_required_fields_before_starting_davinci() {
     let (_root, config) = fixture();
     let missing_query_module =

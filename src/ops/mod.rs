@@ -1,3 +1,4 @@
+pub mod diff_ecuc;
 pub mod edit_file;
 pub mod find_module;
 pub mod find_module_template;
