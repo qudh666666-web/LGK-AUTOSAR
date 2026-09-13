@@ -1,5 +1,16 @@
 # LGK-Vector：下一对话维护 Skill 与修改记录
 
+## 2026-09-13 通用 AUTOSAR 模型索引：本机 v0.3.12
+
+实现提交 `7260a3a` 新增只读 `inspect_autosar_model` 和
+`trace_autosar_model`。工具现在可以按通用 XML 类型、短名、语义路径和引用
+索引 System/Developer ARXML，并沿引用与命名包含关系追踪 Frame、PDU、Signal、
+SWC、Port、Interface、DataType 和 Mapping。默认输出受限，不依赖供应商模块名。
+
+当前工程只读实测扫描 20 份 ARXML、2,559 个对象约 2.4 秒，并成功从真实
+CAN-FRAME 追踪到 mapping 与 N-PDU。该版本只查询和核验依赖，不自动创建应用层
+对象；`import_dbc` 仍负责替换已注册 DBC 并调用官方 Project Update。
+
 ## 2026-09-13 语义写入：本机 v0.3.11
 
 实现提交 `ebb2852` 新增 `set_ecuc_value`。已有参数或引用可以按 DPA 实际模块、

@@ -296,11 +296,29 @@ Avoid these previously observed mistakes:
 - Keep the central tool at `D:\Tools\LGK-Vector`; remove project-local legacy
   bridge configs, scripts, and binaries instead of maintaining two tools.
 
-Supported functions are `inspect_ecuc_containers`, `diff_ecuc`, `set_ecuc_value`, `find_module`,
+Supported functions are `inspect_ecuc_containers`, `inspect_autosar_model`, `trace_autosar_model`, `diff_ecuc`, `set_ecuc_value`, `find_module`,
 `find_module_template`, `get_param_definition`, `locate_container`,
 `verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
 `update_project`, `import_dbc`, and `shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
 accepted.
+
+Use `inspect_autosar_model` for bounded, read-only discovery across saved
+`Config/System` and `Config/Developer` ARXML. Filter with AUTOSAR XML element
+`kinds`, `name_regex`, `path_prefix`, or `references_to`. Use
+`trace_autosar_model` to follow `*-REF` edges and named containment between
+frames, mapping objects, PDUs, signals, SWCs, ports, interfaces and data types.
+Prefer an exact semantic `start` path and keep the default bounds unless a
+specific chain is truncated. Neither operation starts DaVinci or edits ARXML.
+
+```json
+{
+  "func": "trace_autosar_model",
+  "start": "/SystemSignals/VehicleSpeed",
+  "direction": "both",
+  "depth": 4,
+  "node_limit": 64
+}
+```
 
 `set_ecuc_value` changes one existing direct parameter or reference without
 requiring XML lines in the request. It resolves the module through the current

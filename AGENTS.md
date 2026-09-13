@@ -18,7 +18,8 @@ run PowerShell.
 
 ## Safe ECUC workflow
 
-- Inspect first: use `find_module`, `inspect_ecuc_containers`, `diff_ecuc`,
+- Inspect first: use `find_module`, `inspect_ecuc_containers`, `inspect_autosar_model`,
+  `trace_autosar_model`, `diff_ecuc`,
   `find_module_template`, and `get_param_definition` before proposing a change.
 - For DaVinci configuration, use LGK-Vector requests rather than manually
   editing ARXML. Use `set_ecuc_value` for an existing parameter/reference and

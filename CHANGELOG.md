@@ -2,6 +2,33 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## v0.3.12 - 2026-09-13
+
+- Implementation commit: `7260a3a`. Added read-only `inspect_autosar_model`
+  and `trace_autosar_model` through doctor, resident Host, CLI and PowerShell
+  wrapper. They index generic AUTOSAR objects by XML kind, `SHORT-NAME`, stable
+  semantic path, source file and `*-REF` relationships across saved System and
+  Developer ARXML, without hard-coding Vector module display names.
+- Trace supports incoming, outgoing and bidirectional traversal. Named
+  containment edges preserve Frame-to-mapping and PDU-to-signal-mapping links;
+  AR-PACKAGE containment is omitted to reduce noise. Repeated definitions in
+  Communication and SystemExtract resolve as one semantic start while all
+  matching references remain traversable.
+- Query output defaults to 32 objects and trace defaults to depth 3, 64 nodes
+  and 128 edges. Hard limits are 512 ARXML files, 64 MiB per file, 256 MiB total,
+  depth 6, 256 nodes and 512 edges. Symlinks, oversized scopes, invalid regular
+  expressions and genuinely ambiguous start paths fail without starting
+  DaVinci or modifying the project.
+- Verified: release build produced matching v0.3.12 CLI/Host; 57 Rust tests
+  passed and one optional private-report test was ignored; Clippy `-D warnings`,
+  changed-file rustfmt and diff checks passed. A read-only scan of the current
+  Vector project indexed 2,559 objects from 20 model ARXML files (2.26 MB) in
+  about 2.4 seconds, and traced a real CAN Frame through its mapping to an N-PDU.
+- Limits: this release provides generic discovery and dependency tracing. It
+  does not yet create SWCs, ports, interfaces, data types or data mappings, and
+  it does not claim that a DBC Project Update created every application artifact.
+  No customer file was copied into the repository or changed during validation.
+
 ## v0.3.11 - 2026-09-13
 
 - Implementation commit: `ebb2852`. Added `set_ecuc_value` to doctor, resident

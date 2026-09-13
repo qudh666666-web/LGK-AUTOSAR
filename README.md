@@ -95,9 +95,15 @@ lgk-vector.exe '{"func":"find_module","module":"Com"}'
 
 The supplied PowerShell wrapper performs the host-start step automatically. Prefer it for automation and AI-tool integration.
 
-Supported functions are `inspect_ecuc_containers`, `diff_ecuc`, `set_ecuc_value`, `find_module`, `find_module_template`, `get_param_definition`, `locate_container`, `verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`, `update_project`, `import_dbc`, and `shutdown_host`. For existing automation, `find_bsw_module`, `get_bsw_module_template`, and `get_bsw_param_definition` remain accepted aliases.
+Supported functions are `inspect_ecuc_containers`, `inspect_autosar_model`, `trace_autosar_model`, `diff_ecuc`, `set_ecuc_value`, `find_module`, `find_module_template`, `get_param_definition`, `locate_container`, `verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`, `update_project`, `import_dbc`, and `shutdown_host`. For existing automation, `find_bsw_module`, `get_bsw_module_template`, and `get_bsw_param_definition` remain accepted aliases.
 
 `inspect_ecuc_containers` reads saved ECUC ARXML locally and does not start DaVinci. It can therefore inspect a project while the GUI holds the `.dpa` lock. Multiple inspection requests in one array return one flat result array; do not mix inspection requests with other functions in the same batch.
+
+`inspect_autosar_model` builds a bounded, vendor-neutral index from saved System and Developer ARXML. Filter by AUTOSAR element `kinds`, `name_regex`, `path_prefix`, or `references_to`; results use semantic paths and default to 32 objects. `trace_autosar_model` follows incoming, outgoing, or bidirectional `*-REF` relationships plus named containment needed for frame/PDU/signal mappings. Start with an exact semantic path when duplicate short names exist. Both operations are local and read-only; depth, node, edge, file and byte limits prevent a large extract from flooding an agent context.
+
+```json
+{"func":"trace_autosar_model","start":"/SystemSignals/VehicleSpeed","direction":"both","depth":4,"node_limit":64}
+```
 
 `diff_ecuc` compares one module in two project-local ARXML snapshots without starting DaVinci. It reports stable semantic paths and only added, modified, or deleted parameter/reference values. Results default to 32 changes, allow at most 256, and truncate each returned value after 512 Unicode characters. Use `path_prefix` and a small `limit` to keep review output bounded.
 
