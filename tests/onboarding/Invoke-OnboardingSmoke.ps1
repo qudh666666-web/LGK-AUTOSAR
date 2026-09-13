@@ -121,7 +121,7 @@ try {
     Assert-True ($doctor.valid -eq $true) 'initializer doctor must report valid=true'
     Assert-True ($doctor.preflight -eq 'static') 'doctor must label itself as a static preflight'
     Assert-True ($doctor.davinci_executed -eq $false) 'doctor must not claim that DaVinci was executed'
-    Assert-True ($doctor.version -eq '0.3.10') 'initializer must use the current release binary'
+    Assert-True ($doctor.version -eq '0.3.11') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
     $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
@@ -239,6 +239,29 @@ $ErrorActionPreference = 'Stop'
     Assert-True ($diff.total -eq 1 -and $diff.counts.modify -eq 1) 'diff_ecuc must report one semantic modification'
     Assert-True ($diff.changes[0].old -eq '8' -and $diff.changes[0].new -eq '16') 'diff_ecuc must return compact old/new values'
     Assert-True ($diff.truncated -eq $false) 'diff_ecuc must not mark a complete bounded result as truncated'
+
+    $semanticEditRequest = [ordered]@{
+        func = 'set_ecuc_value'
+        module = 'Com'
+        container_path = 'Com/ComConfig/PublicSignal'
+        parameter = 'ComBitPosition'
+        expected = '8'
+        value = '16'
+    } | ConvertTo-Json -Compress
+    $semanticEditOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request $semanticEditRequest)
+    $semanticEdit = (($semanticEditOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($semanticEdit.changed -eq $true -and $semanticEdit.old -eq '8' -and $semanticEdit.new -eq '16') 'set_ecuc_value must apply one verified semantic edit'
+    Assert-True ([IO.File]::ReadAllText($ecuc).Contains('<VALUE>16</VALUE>')) 'set_ecuc_value must update the selected saved value'
+    $semanticRestoreRequest = [ordered]@{
+        func = 'set_ecuc_value'
+        module = 'Com'
+        container_path = '/ComConfig/PublicSignal'
+        parameter = 'ComBitPosition'
+        expected = '16'
+        value = '8'
+    } | ConvertTo-Json -Compress
+    & $wrapper -ProjectPath $project -ExecutablePath $executable -Request $semanticRestoreRequest | Out-Null
+    Assert-True ([IO.File]::ReadAllText($ecuc).Contains('<VALUE>8</VALUE>')) 'set_ecuc_value must accept a module-less canonical container path'
 
     $generatedDelivery = Join-Path $temporaryRoot 'Generated\Com_Cfg.h'
     $compiledDelivery = Join-Path $temporaryRoot 'Proj_Code\Com_Cfg.h'
@@ -366,7 +389,7 @@ $ErrorActionPreference = 'Stop'
     $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKVector.ps1'
     $packageDoctorOutput = @(& $packageInitializer -ProjectPath $packageProject -ToolPath $tool)
     $packageDoctor = (($packageDoctorOutput | Out-String) | ConvertFrom-Json)
-    Assert-True ($packageDoctor.version -eq '0.3.10') 'packaged initializer must use packaged binaries by default'
+    Assert-True ($packageDoctor.version -eq '0.3.11') 'packaged initializer must use packaged binaries by default'
 
     $activeWrapper = $packageWrapper
     $activeProject = $packageProject

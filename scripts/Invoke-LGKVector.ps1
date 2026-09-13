@@ -208,6 +208,7 @@ try {
     $allowedFunctions = @(
         'inspect_ecuc_containers',
         'diff_ecuc',
+        'set_ecuc_value',
         'find_module',
         'find_bsw_module',
         'find_module_template',
@@ -237,7 +238,7 @@ try {
         }
     }
     $mutatingFunctions = @(
-        'edit_file', 'auto_solve_errors', 'generate_code',
+        'set_ecuc_value', 'edit_file', 'auto_solve_errors', 'generate_code',
         'update_project', 'import_dbc', 'shutdown_host'
     )
     if ($requestObject -is [System.Array] -and $requestObject.Count -gt 1) {

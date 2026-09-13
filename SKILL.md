@@ -53,12 +53,12 @@ pending or failed, state it rather than advancing the issue as complete.
 2. Use `find_module`, `get_param_definition`, `locate_container`, or
    `inspect_ecuc_containers` to establish the actual module, definition, and
    configured container.
-3. Before `edit_file`, save and close the same project in DaVinci GUI; an open
+3. Before `set_ecuc_value` or `edit_file`, save and close the same project in DaVinci GUI; an open
    GUI may later overwrite external ARXML changes from its in-memory model.
-   Modify ECUC only with a narrowly scoped `edit_file` request. Include an
-   `expected` object with exactly the same ranges and the exact text just read;
-   the tool must reject the edit if that text has changed. Do not use a general
-   script or manual XML rewrite to bypass this precondition.
+   Use `set_ecuc_value` for one existing parameter/reference: name the real
+   module, container instance path, exact saved `expected`, and new `value`.
+   Use narrowly scoped `edit_file` only for structural changes it cannot express;
+   include exact expected text for every range. Never bypass either precondition.
 4. Generate only the affected module unless full generation is explicitly
    required. `generate_code` and `auto_solve_errors` must name a module;
    `module:"all"` is accepted only as an explicit opt-in.
@@ -76,7 +76,7 @@ Complete ordinary ECUC edits such as CAN channel, baud rate, pin, controller,
 transceiver, or single-container changes within three minutes:
 
 1. Spend at most 30 seconds on `find_module` plus read-only inspection.
-2. Spend at most 60 seconds on one narrow `edit_file` request.
+2. Spend at most 60 seconds on one `set_ecuc_value` or narrow `edit_file` request.
 3. Generate only directly affected modules, with at most one generation attempt.
 4. Reserve the final 30 seconds for targeted searches and `shutdown_host`.
 5. At 180 seconds, stop. Report the exact blocker and ask the user to identify
@@ -290,17 +290,40 @@ Avoid these previously observed mistakes:
   generated output only after a targeted generator attempt.
 - Do not mix `inspect_ecuc_containers` with DaVinci-backed functions in one
   batch. Keep read-only batches separate.
-- Multi-item arrays are read-only. Send `edit_file`, `auto_solve_errors`,
+- Multi-item arrays are read-only. Send `set_ecuc_value`, `edit_file`, `auto_solve_errors`,
   `generate_code`, `update_project`, `import_dbc`, and `shutdown_host` as standalone requests so a batch can
   never leave a partially applied mutation or generation.
 - Keep the central tool at `D:\Tools\LGK-Vector`; remove project-local legacy
   bridge configs, scripts, and binaries instead of maintaining two tools.
 
-Supported functions are `inspect_ecuc_containers`, `diff_ecuc`, `find_module`,
+Supported functions are `inspect_ecuc_containers`, `diff_ecuc`, `set_ecuc_value`, `find_module`,
 `find_module_template`, `get_param_definition`, `locate_container`,
 `verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
 `update_project`, `import_dbc`, and `shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
 accepted.
+
+`set_ecuc_value` changes one existing direct parameter or reference without
+requiring XML lines in the request. It resolves the module through the current
+DPA, accepts a container path with or without the module prefix, requires one
+unique match and exact saved `expected`, escapes the new XML text, reparses and
+re-locates the candidate, rechecks the original bytes, then atomically replaces
+the file. It preserves every unrelated byte. It does not create/delete values
+or containers; use `edit_file` for those structural operations.
+
+```json
+{
+  "func": "set_ecuc_value",
+  "module": "Com",
+  "container_path": "Com/ComConfig/VehicleSpeed",
+  "parameter": "ComBitPosition",
+  "expected": "8",
+  "value": "16"
+}
+```
+
+Use `reference` instead of `parameter` for an existing `VALUE-REF`. Names may
+also be full definition refs. New values are limited to 4096 Unicode characters;
+response values are capped at 512 with truncation flags.
 
 `diff_ecuc` compares one concrete module across two `.arxml` files contained by
 the configured project. It is local and read-only, accepts project-relative or

@@ -7,6 +7,7 @@ pub mod get_param_definition;
 pub mod inspect_ecuc_containers;
 pub mod locate_container;
 pub mod manage_errors;
+pub mod set_ecuc_value;
 pub mod verify_delivery;
 
 use anyhow::Result;

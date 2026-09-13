@@ -103,6 +103,7 @@ impl CommandDispatcher {
             "diff_ecuc" => {
                 ops::diff_ecuc::execute(config, request)?;
             }
+            "set_ecuc_value" => ops::set_ecuc_value::validate(config, request)?,
             "edit_file" => ops::edit_file::validate(config, request)?,
             "get_errors_list" => {
                 optional_module(request)?;
@@ -157,6 +158,12 @@ impl CommandDispatcher {
             "locate_container" => ops::locate_container::execute(config, request),
             "verify_delivery" => ops::verify_delivery::execute(config, request),
             "diff_ecuc" => ops::diff_ecuc::execute(config, request),
+            "set_ecuc_value" => {
+                if let Some(client) = self.davinci.take() {
+                    client.shutdown()?;
+                }
+                ops::set_ecuc_value::execute(config, request)
+            }
             "edit_file" => {
                 // A previous get_errors/generate request may have left DaVinci's
                 // in-memory project open. Close that owned session before a
@@ -278,7 +285,7 @@ fn validate_batch_shape(parsed: &Value) -> Result<(Vec<&Value>, bool)> {
             .any(|item| request_func(item).is_some_and(is_mutating_func))
     {
         bail!(
-            "edit_file, auto_solve_errors, generate_code, update_project, and import_dbc must be standalone requests; multi-item batches are read-only"
+            "set_ecuc_value, edit_file, auto_solve_errors, generate_code, update_project, and import_dbc must be standalone requests; multi-item batches are read-only"
         );
     }
     Ok((items, inspect_count != 0))
@@ -297,7 +304,12 @@ fn request_func(request: &Value) -> Option<&str> {
 fn is_mutating_func(func: &str) -> bool {
     matches!(
         func,
-        "edit_file" | "auto_solve_errors" | "generate_code" | "update_project" | "import_dbc"
+        "set_ecuc_value"
+            | "edit_file"
+            | "auto_solve_errors"
+            | "generate_code"
+            | "update_project"
+            | "import_dbc"
     )
 }
 

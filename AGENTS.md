@@ -21,12 +21,12 @@ run PowerShell.
 - Inspect first: use `find_module`, `inspect_ecuc_containers`, `diff_ecuc`,
   `find_module_template`, and `get_param_definition` before proposing a change.
 - For DaVinci configuration, use LGK-Vector requests rather than manually
-  editing ARXML. Use `edit_file` only for a scoped, reviewed text change with
-  exact `expected` source text.
-- Before `edit_file`, `import_dbc`, or `update_project`, save and close the
+  editing ARXML. Use `set_ecuc_value` for an existing parameter/reference and
+  `edit_file` only for a scoped structural text change with exact expected text.
+- Before `set_ecuc_value`, `edit_file`, `import_dbc`, or `update_project`, save and close the
   same project in the DaVinci GUI. Do not make a disk edit while its unsaved GUI
   model can overwrite it.
-- Send mutations (`edit_file`, `import_dbc`, `update_project`,
+- Send mutations (`set_ecuc_value`, `edit_file`, `import_dbc`, `update_project`,
   `auto_solve_errors`, `generate_code`) one at a time. Validate errors and
   generate only the affected module unless an explicit all-module generation
   is intended.

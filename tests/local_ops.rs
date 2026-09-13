@@ -599,6 +599,172 @@ fn diff_ecuc_rejects_duplicate_paths_and_files_outside_project() {
 }
 
 #[test]
+fn sets_one_ecuc_value_semantically_and_preserves_unrelated_bytes() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let original_text = fs::read_to_string(&file).unwrap().replace('\n', "\r\n");
+    let mut original = vec![0xEF, 0xBB, 0xBF];
+    original.extend_from_slice(original_text.as_bytes());
+    fs::write(&file, &original).unwrap();
+
+    let result = ops::set_ecuc_value::execute(
+        &config,
+        &json!({
+            "module": "com",
+            "container_path": "Com/ComConfig/SignalA",
+            "parameter": "ComBitPosition",
+            "expected": "8",
+            "value": "16"
+        }),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(result["path"], "Com/ComConfig/SignalA/ComBitPosition");
+    assert_eq!(result["old"], "8");
+    assert_eq!(result["new"], "16");
+    assert_eq!(result["kind"], "parameter");
+
+    let expected = original_text.replace("<VALUE>8</VALUE>", "<VALUE>16</VALUE>");
+    let mut expected_bytes = vec![0xEF, 0xBB, 0xBF];
+    expected_bytes.extend_from_slice(expected.as_bytes());
+    assert_eq!(fs::read(&file).unwrap(), expected_bytes);
+
+    let unchanged = ops::set_ecuc_value::execute(
+        &config,
+        &json!({
+            "module": "Com",
+            "container_path": "/ComConfig/SignalA",
+            "parameter": "/MICROSAR/Com/ComConfig/ComSignal/ComBitPosition",
+            "expected": "16",
+            "value": "16"
+        }),
+    )
+    .unwrap();
+    assert_eq!(unchanged["changed"], false);
+    assert_eq!(fs::read(&file).unwrap(), expected_bytes);
+}
+
+#[test]
+fn semantic_ecuc_edit_rejects_stale_ambiguous_and_indirect_targets() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let original = fs::read(&file).unwrap();
+    let stale = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig/SignalA",
+            "parameter":"ComBitPosition", "expected":"7", "value":"16"}),
+    )
+    .unwrap_err();
+    let diagnostic: serde_json::Value = serde_json::from_str(&stale.to_string()).unwrap();
+    assert_eq!(diagnostic["code"], "ECUC_VALUE_PRECONDITION_FAILED");
+    assert_eq!(diagnostic["details"]["current"], "8");
+
+    let indirect = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig",
+            "parameter":"ComBitPosition", "expected":"8", "value":"16"}),
+    )
+    .unwrap_err();
+    let diagnostic: serde_json::Value = serde_json::from_str(&indirect.to_string()).unwrap();
+    assert_eq!(diagnostic["code"], "ECUC_VALUE_NOT_FOUND");
+    assert_eq!(fs::read(&file).unwrap(), original);
+
+    let text = String::from_utf8(original.clone()).unwrap();
+    let start = text
+        .find("          <ECUC-CONTAINER-VALUE>")
+        .expect("nested container start");
+    let end_marker = "          </ECUC-CONTAINER-VALUE>";
+    let end = start + text[start..].find(end_marker).unwrap() + end_marker.len();
+    let duplicate = format!("{}\n{}", &text[start..end], &text[start..end]);
+    fs::write(&file, text.replacen(&text[start..end], &duplicate, 1)).unwrap();
+    let ambiguous = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig/SignalA",
+            "parameter":"ComBitPosition", "expected":"8", "value":"16"}),
+    )
+    .unwrap_err();
+    let diagnostic: serde_json::Value = serde_json::from_str(&ambiguous.to_string()).unwrap();
+    assert_eq!(diagnostic["code"], "ECUC_VALUE_AMBIGUOUS");
+}
+
+#[test]
+fn sets_existing_ecuc_reference_semantically() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let original = fs::read_to_string(&file).unwrap();
+    let with_reference = original.replace(
+        "            </PARAMETER-VALUES>",
+        r#"            </PARAMETER-VALUES>
+            <REFERENCE-VALUES>
+              <ECUC-REFERENCE-VALUE>
+                <DEFINITION-REF DEST="ECUC-REFERENCE-DEF">/Vendor/Com/ComConfig/ComSignal/ComTargetRef</DEFINITION-REF>
+                <VALUE-REF DEST="ECUC-CONTAINER-VALUE">/Target/One</VALUE-REF>
+              </ECUC-REFERENCE-VALUE>
+            </REFERENCE-VALUES>"#,
+    );
+    fs::write(&file, with_reference).unwrap();
+
+    let result = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig/SignalA",
+            "reference":"ComTargetRef", "expected":"/Target/One", "value":"/Target/Two"}),
+    )
+    .unwrap();
+    assert_eq!(result["kind"], "reference");
+    assert_eq!(result["new"], "/Target/Two");
+    let edited = fs::read_to_string(&file).unwrap();
+    assert!(edited.contains(">/Target/Two</VALUE-REF>"));
+    assert!(!edited.contains(">/Target/One</VALUE-REF>"));
+}
+
+#[test]
+fn semantic_ecuc_edit_never_treats_commented_xml_as_the_target() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let original = fs::read_to_string(&file).unwrap();
+    let fake = r#"<!-- <ECUC-NUMERICAL-PARAM-VALUE>
+      <DEFINITION-REF>/MICROSAR/Com/ComConfig/ComSignal/ComBitPosition</DEFINITION-REF>
+      <VALUE>8</VALUE>
+    </ECUC-NUMERICAL-PARAM-VALUE> -->"#;
+    let content = original.replace("<VALUE>8</VALUE>", "<VALUE/>").replace(
+        "            <PARAMETER-VALUES>",
+        &format!("            {fake}\n            <PARAMETER-VALUES>"),
+    );
+    fs::write(&file, &content).unwrap();
+
+    let error = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig/SignalA",
+            "parameter":"ComBitPosition", "expected":"8", "value":"16"}),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("parsed semantic target"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), content);
+}
+
+#[test]
+fn semantic_ecuc_edit_is_mutating_and_doctor_only_validates() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let request = json!({"func":"set_ecuc_value", "module":"Com",
+        "container_path":"ComConfig/SignalA", "parameter":"ComBitPosition",
+        "expected":"8", "value":"16"});
+    CommandDispatcher::validate_batch(&config, &request.to_string()).unwrap();
+    assert!(fs::read_to_string(&file)
+        .unwrap()
+        .contains("<VALUE>8</VALUE>"));
+
+    let batch = json!([request, {"func":"find_module", "module":"Com"}]);
+    let error = CommandDispatcher::new()
+        .dispatch_batch(&config, &batch.to_string())
+        .unwrap_err();
+    assert!(error.to_string().contains("must be standalone requests"));
+    assert!(fs::read_to_string(&file)
+        .unwrap()
+        .contains("<VALUE>8</VALUE>"));
+}
+
+#[test]
 fn doctor_rejects_missing_required_fields_before_starting_davinci() {
     let (_root, config) = fixture();
     let missing_query_module =
