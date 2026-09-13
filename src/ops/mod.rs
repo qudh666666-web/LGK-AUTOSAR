@@ -1,3 +1,5 @@
+pub mod autosar_model;
+pub mod diff_ecuc;
 pub mod edit_file;
 pub mod find_module;
 pub mod find_module_template;
@@ -6,6 +8,7 @@ pub mod get_param_definition;
 pub mod inspect_ecuc_containers;
 pub mod locate_container;
 pub mod manage_errors;
+pub mod set_ecuc_value;
 pub mod verify_delivery;
 
 use anyhow::Result;
@@ -19,8 +22,11 @@ pub(crate) fn required_module(request: &Value) -> Result<&str> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            anyhow::anyhow!(
-                "module is required (accepted keys: module or module_name; use the ECUC short name, for example CanTrcv, not a driver package name such as CanTrcv_30_Tja1040)"
+            crate::diagnostic::failure(
+                "MODULE_REQUIRED",
+                "module is required (accepted keys: module or module_name; use the ECUC short name)",
+                "module",
+                serde_json::json!({"accepted_keys": ["module", "module_name"]}),
             )
         })
 }

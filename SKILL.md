@@ -53,12 +53,12 @@ pending or failed, state it rather than advancing the issue as complete.
 2. Use `find_module`, `get_param_definition`, `locate_container`, or
    `inspect_ecuc_containers` to establish the actual module, definition, and
    configured container.
-3. Before `edit_file`, save and close the same project in DaVinci GUI; an open
+3. Before `set_ecuc_value` or `edit_file`, save and close the same project in DaVinci GUI; an open
    GUI may later overwrite external ARXML changes from its in-memory model.
-   Modify ECUC only with a narrowly scoped `edit_file` request. Include an
-   `expected` object with exactly the same ranges and the exact text just read;
-   the tool must reject the edit if that text has changed. Do not use a general
-   script or manual XML rewrite to bypass this precondition.
+   Use `set_ecuc_value` for one existing parameter/reference: name the real
+   module, container instance path, exact saved `expected`, and new `value`.
+   Use narrowly scoped `edit_file` only for structural changes it cannot express;
+   include exact expected text for every range. Never bypass either precondition.
 4. Generate only the affected module unless full generation is explicitly
    required. `generate_code` and `auto_solve_errors` must name a module;
    `module:"all"` is accepted only as an explicit opt-in.
@@ -76,7 +76,7 @@ Complete ordinary ECUC edits such as CAN channel, baud rate, pin, controller,
 transceiver, or single-container changes within three minutes:
 
 1. Spend at most 30 seconds on `find_module` plus read-only inspection.
-2. Spend at most 60 seconds on one narrow `edit_file` request.
+2. Spend at most 60 seconds on one `set_ecuc_value` or narrow `edit_file` request.
 3. Generate only directly affected modules, with at most one generation attempt.
 4. Reserve the final 30 seconds for targeted searches and `shutdown_host`.
 5. At 180 seconds, stop. Report the exact blocker and ask the user to identify
@@ -101,10 +101,11 @@ For a CAN0/CAN1 switch, inspect and change this chain in order:
 
 ### Validation gate after every generation
 
-Treat an LGK `generation completed` response as provisional. Immediately read
-the newest DaVinci Generation Report and require all of the following before
-calling generation successful, synchronizing generated files, committing, or
-reporting completion:
+From v0.3.8, `generate_code` automatically verifies the one report created or
+rewritten by this request in DPA `Folders/Logs`. Require `passed:true` and the
+returned report summary; do not re-read a passing report through the Agent.
+For older binaries or a failed gate, inspect the named report before calling
+generation successful, synchronizing files, committing, or reporting completion:
 
 - Validation has zero errors.
 - The requested module has `Execution Result: SUCCESS` and its `GENERATION`
@@ -289,24 +290,93 @@ Avoid these previously observed mistakes:
   generated output only after a targeted generator attempt.
 - Do not mix `inspect_ecuc_containers` with DaVinci-backed functions in one
   batch. Keep read-only batches separate.
-- Multi-item arrays are read-only. Send `edit_file`, `auto_solve_errors`,
+- Multi-item arrays are read-only. Send `set_ecuc_value`, `edit_file`, `auto_solve_errors`,
   `generate_code`, `update_project`, `import_dbc`, and `shutdown_host` as standalone requests so a batch can
   never leave a partially applied mutation or generation.
 - Keep the central tool at `D:\Tools\LGK-Vector`; remove project-local legacy
   bridge configs, scripts, and binaries instead of maintaining two tools.
 
-Supported functions are `inspect_ecuc_containers`, `find_module`,
+Supported functions are `inspect_ecuc_containers`, `inspect_autosar_model`, `trace_autosar_model`, `diff_ecuc`, `set_ecuc_value`, `find_module`,
 `find_module_template`, `get_param_definition`, `locate_container`,
 `verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
 `update_project`, `import_dbc`, and `shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
 accepted.
 
+Use `inspect_autosar_model` for bounded, read-only discovery across saved
+`Config/System` and `Config/Developer` ARXML. Filter with AUTOSAR XML element
+`kinds`, `name_regex`, `path_prefix`, or `references_to`. Use
+`trace_autosar_model` to follow `*-REF` edges and named containment between
+frames, mapping objects, PDUs, signals, SWCs, ports, interfaces and data types.
+Prefer an exact semantic `start` path and keep the default bounds unless a
+specific chain is truncated. Neither operation starts DaVinci or edits ARXML.
+
+```json
+{
+  "func": "trace_autosar_model",
+  "start": "/SystemSignals/VehicleSpeed",
+  "direction": "both",
+  "depth": 4,
+  "node_limit": 64
+}
+```
+
+`set_ecuc_value` changes one existing direct parameter or reference without
+requiring XML lines in the request. It resolves the module through the current
+DPA, accepts a container path with or without the module prefix, requires one
+unique match and exact saved `expected`, escapes the new XML text, reparses and
+re-locates the candidate, rechecks the original bytes, then atomically replaces
+the file. It preserves every unrelated byte. It does not create/delete values
+or containers; use `edit_file` for those structural operations.
+
+```json
+{
+  "func": "set_ecuc_value",
+  "module": "Com",
+  "container_path": "Com/ComConfig/VehicleSpeed",
+  "parameter": "ComBitPosition",
+  "expected": "8",
+  "value": "16"
+}
+```
+
+Use `reference` instead of `parameter` for an existing `VALUE-REF`. Names may
+also be full definition refs. New values are limited to 4096 Unicode characters;
+response values are capped at 512 with truncation flags.
+
+`diff_ecuc` compares one concrete module across two `.arxml` files contained by
+the configured project. It is local and read-only, accepts project-relative or
+absolute contained paths, and returns only semantic parameter/reference
+changes. Prefer a narrow `path_prefix` and the default `limit:32`; the hard
+limit is 256 changes and each old/new value is capped at 512 Unicode characters
+with a truncation flag. Duplicate semantic paths fail instead of being guessed.
+
+```json
+{
+  "func": "diff_ecuc",
+  "module": "Com",
+  "left": "Config\\ECUC\\Com_before.arxml",
+  "right": "Config\\ECUC\\Com_after.arxml",
+  "path_prefix": "Com/ComConfig/VehicleSpeed",
+  "limit": 16
+}
+```
+
 `verify_delivery` is a local read-only gate. Pass an absolute `root` that
 contains the configured DaVinci Cfg directory, then use root-relative `path`
 and optional `same_as` values. It compares exact file bytes and checks exact
 required/forbidden byte strings. Enforcement defaults to true, so a missing,
-stale, or invalid compiled file makes the request fail; use `enforce:false`
-only to retrieve diagnostic JSON, never as acceptance evidence.
+stale or invalid file still fails the request. From v0.3.9 the error already
+contains compact JSON details: code DELIVERY_VERIFICATION_FAILED, field checks,
+failed_checks with zero-based check_index, synchronization and missing/forbidden
+patterns. Do not re-run just to retrieve the same diagnostics. At most 8 failed
+checks and 8 patterns per kind are included, with counts/truncation indicators;
+use targeted checks or enforce:false only if more detail is actually needed.
+Only passed:true is acceptance evidence.
+
+Missing/unknown modules return MODULE_REQUIRED / MODULE_NOT_FOUND JSON inside
+the existing error channel. Unknown-module candidates come from the current DPA
+(up to 8); select the actual module after inspection, never auto-apply a guessed
+replacement. Other errors retain their existing text; successful output is unchanged.
 
 ```json
 {
@@ -327,10 +397,21 @@ the few required names with `get_param_definition`. Use `details:true` only for
 explicit maintainer diagnosis. The resident Host caches the parsed template and
 invalidates it when the source ARXML changes.
 
-The executable accepts an omitted `generate_code.module` as legacy
-`module:"all"` compatibility. Do not rely on that default in agent work: name
-the affected module, or write `module:"all"` when full generation is genuinely
-requested.
+`generate_code` requires `module` (or the existing `module_name` alias).
+An omitted module is rejected before DaVinci starts. Migrate old callers by
+passing the affected module or explicit `module:"all"`; module names and real
+definition paths continue to come from the current project, not a whitelist.
+Report discovery scans only two levels of DPA `Folders/Logs` (8192 entries,
+32 MiB report limit), never the SIP. Missing, unchanged, ambiguous or unsupported
+reports fail acceptance without retrying generation. Only failure requires
+Agent diagnosis; no extra approval or successful-path request is introduced.
+
+`edit_file` syncs a unique same-directory temporary file, rechecks the original
+bytes, then renames it over the target. There is no copy-over fallback. This
+prevents partial-copy damage but does not lock out an external GUI or guarantee
+power-loss durability; the save-and-close GUI rule still applies. Rename keeps
+the temporary file's filesystem identity and inherited ACL; custom per-file
+ACLs, alternate streams and hard-link identity are not preserved.
 
 Use `update_project` to run the DPA's registered Project Update inputs. Use
 `import_dbc` with an absolute `source` and a project-relative `registered_path`

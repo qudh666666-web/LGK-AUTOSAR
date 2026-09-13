@@ -207,6 +207,10 @@ try {
     # this list exists only to reject misspelled functions before Host startup.
     $allowedFunctions = @(
         'inspect_ecuc_containers',
+        'inspect_autosar_model',
+        'trace_autosar_model',
+        'diff_ecuc',
+        'set_ecuc_value',
         'find_module',
         'find_bsw_module',
         'find_module_template',
@@ -236,7 +240,7 @@ try {
         }
     }
     $mutatingFunctions = @(
-        'edit_file', 'auto_solve_errors', 'generate_code',
+        'set_ecuc_value', 'edit_file', 'auto_solve_errors', 'generate_code',
         'update_project', 'import_dbc', 'shutdown_host'
     )
     if ($requestObject -is [System.Array] -and $requestObject.Count -gt 1) {

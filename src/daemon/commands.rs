@@ -94,12 +94,22 @@ impl CommandDispatcher {
             "inspect_ecuc_containers" => {
                 ops::inspect_ecuc_containers::execute(config, request)?;
             }
+            "inspect_autosar_model" => {
+                ops::autosar_model::inspect(config, request)?;
+            }
+            "trace_autosar_model" => {
+                ops::autosar_model::trace(config, request)?;
+            }
             "locate_container" => {
                 ops::locate_container::execute(config, request)?;
             }
             "verify_delivery" => {
                 ops::verify_delivery::execute(config, request)?;
             }
+            "diff_ecuc" => {
+                ops::diff_ecuc::execute(config, request)?;
+            }
+            "set_ecuc_value" => ops::set_ecuc_value::validate(config, request)?,
             "edit_file" => ops::edit_file::validate(config, request)?,
             "get_errors_list" => {
                 optional_module(request)?;
@@ -121,10 +131,7 @@ impl CommandDispatcher {
                 validate_davinci_dependencies(config)?;
             }
             "generate_code" => {
-                // Compatibility with the established bridge: an omitted
-                // module explicitly means full generation.  The Skill still
-                // sends a concrete affected module for the normal fast path.
-                let module = optional_module(request)?;
+                let module = ops::required_module(request)?;
                 if !module.eq_ignore_ascii_case("all") {
                     let modules = ModuleIndex::load(config)?;
                     let module_info = modules.find(module)?;
@@ -154,8 +161,17 @@ impl CommandDispatcher {
                 ops::get_param_definition::execute(config, request)
             }
             "inspect_ecuc_containers" => ops::inspect_ecuc_containers::execute(config, request),
+            "inspect_autosar_model" => ops::autosar_model::inspect(config, request),
+            "trace_autosar_model" => ops::autosar_model::trace(config, request),
             "locate_container" => ops::locate_container::execute(config, request),
             "verify_delivery" => ops::verify_delivery::execute(config, request),
+            "diff_ecuc" => ops::diff_ecuc::execute(config, request),
+            "set_ecuc_value" => {
+                if let Some(client) = self.davinci.take() {
+                    client.shutdown()?;
+                }
+                ops::set_ecuc_value::execute(config, request)
+            }
             "edit_file" => {
                 // A previous get_errors/generate request may have left DaVinci's
                 // in-memory project open. Close that owned session before a
@@ -183,9 +199,7 @@ impl CommandDispatcher {
                 Ok(json!({"module": module, "message": message}))
             }
             "generate_code" => {
-                // The protocol keeps the established omitted-module => all
-                // behavior. Normal Skill calls still name the affected module.
-                let module = optional_module(request)?;
+                let module = ops::required_module(request)?;
                 // 单模块生成的关键：从当前工程读取真实定义路径，
                 // 而不是把 /MICROSAR/<module> 或某个芯片/SIP 写死。
                 let definition_ref = if module.eq_ignore_ascii_case("all") {
@@ -198,13 +212,19 @@ impl CommandDispatcher {
                         &module_info.module,
                     )?)
                 };
-                let message = self.with_davinci(config, |client| {
+                // Snapshot report metadata before generation; only a changed
+                // report from this operation can serve as acceptance evidence.
+                let reports = crate::vector::generation_report::ReportSnapshot::capture(config)?;
+                self.with_davinci(config, |client| {
                     client.generate(module, definition_ref.as_deref())
                 })?;
+                let report = reports.verify(definition_ref.as_deref())?;
                 Ok(json!({
                     "module": module,
                     "definition_ref": definition_ref,
-                    "message": message
+                    "message": "Generation verified",
+                    "passed": true,
+                    "report": report
                 }))
             }
             "update_project" | "import_dbc" => {
@@ -273,7 +293,7 @@ fn validate_batch_shape(parsed: &Value) -> Result<(Vec<&Value>, bool)> {
             .any(|item| request_func(item).is_some_and(is_mutating_func))
     {
         bail!(
-            "edit_file, auto_solve_errors, generate_code, update_project, and import_dbc must be standalone requests; multi-item batches are read-only"
+            "set_ecuc_value, edit_file, auto_solve_errors, generate_code, update_project, and import_dbc must be standalone requests; multi-item batches are read-only"
         );
     }
     Ok((items, inspect_count != 0))
@@ -292,7 +312,12 @@ fn request_func(request: &Value) -> Option<&str> {
 fn is_mutating_func(func: &str) -> bool {
     matches!(
         func,
-        "edit_file" | "auto_solve_errors" | "generate_code" | "update_project" | "import_dbc"
+        "set_ecuc_value"
+            | "edit_file"
+            | "auto_solve_errors"
+            | "generate_code"
+            | "update_project"
+            | "import_dbc"
     )
 }
 

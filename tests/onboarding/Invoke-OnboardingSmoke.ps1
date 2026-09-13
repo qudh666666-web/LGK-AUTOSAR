@@ -121,7 +121,7 @@ try {
     Assert-True ($doctor.valid -eq $true) 'initializer doctor must report valid=true'
     Assert-True ($doctor.preflight -eq 'static') 'doctor must label itself as a static preflight'
     Assert-True ($doctor.davinci_executed -eq $false) 'doctor must not claim that DaVinci was executed'
-    Assert-True ($doctor.version -eq '0.3.7') 'initializer must use the current release binary'
+    Assert-True ($doctor.version -eq '0.3.12') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
     $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
@@ -224,6 +224,45 @@ $ErrorActionPreference = 'Stop'
     Assert-True (@($inspect).Count -eq 1) 'inspect must return one configured signal'
     Assert-True ([string]$inspect.values.ComBitPosition -eq '8') 'inspect must return ComBitPosition=8'
 
+    $diffRight = Join-Path $project 'Config\ECUC\Public_Com_changed.arxml'
+    Write-Utf8 -Path $diffRight -Content ([IO.File]::ReadAllText($ecuc).Replace('<VALUE>8</VALUE>', '<VALUE>16</VALUE>'))
+    $diffRequest = [ordered]@{
+        func = 'diff_ecuc'
+        module = 'Com'
+        left = 'Config\ECUC\Public_Com_ecuc.arxml'
+        right = 'Config\ECUC\Public_Com_changed.arxml'
+        path_prefix = 'Com/ComConfig/PublicSignal'
+        limit = 1
+    } | ConvertTo-Json -Compress
+    $diffOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request $diffRequest)
+    $diff = (($diffOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($diff.total -eq 1 -and $diff.counts.modify -eq 1) 'diff_ecuc must report one semantic modification'
+    Assert-True ($diff.changes[0].old -eq '8' -and $diff.changes[0].new -eq '16') 'diff_ecuc must return compact old/new values'
+    Assert-True ($diff.truncated -eq $false) 'diff_ecuc must not mark a complete bounded result as truncated'
+
+    $semanticEditRequest = [ordered]@{
+        func = 'set_ecuc_value'
+        module = 'Com'
+        container_path = 'Com/ComConfig/PublicSignal'
+        parameter = 'ComBitPosition'
+        expected = '8'
+        value = '16'
+    } | ConvertTo-Json -Compress
+    $semanticEditOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request $semanticEditRequest)
+    $semanticEdit = (($semanticEditOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($semanticEdit.changed -eq $true -and $semanticEdit.old -eq '8' -and $semanticEdit.new -eq '16') 'set_ecuc_value must apply one verified semantic edit'
+    Assert-True ([IO.File]::ReadAllText($ecuc).Contains('<VALUE>16</VALUE>')) 'set_ecuc_value must update the selected saved value'
+    $semanticRestoreRequest = [ordered]@{
+        func = 'set_ecuc_value'
+        module = 'Com'
+        container_path = '/ComConfig/PublicSignal'
+        parameter = 'ComBitPosition'
+        expected = '16'
+        value = '8'
+    } | ConvertTo-Json -Compress
+    & $wrapper -ProjectPath $project -ExecutablePath $executable -Request $semanticRestoreRequest | Out-Null
+    Assert-True ([IO.File]::ReadAllText($ecuc).Contains('<VALUE>8</VALUE>')) 'set_ecuc_value must accept a module-less canonical container path'
+
     $generatedDelivery = Join-Path $temporaryRoot 'Generated\Com_Cfg.h'
     $compiledDelivery = Join-Path $temporaryRoot 'Proj_Code\Com_Cfg.h'
     Write-Utf8 -Path $generatedDelivery -Content '#define COM_CONFIG_VALUE 8'
@@ -243,6 +282,18 @@ $ErrorActionPreference = 'Stop'
     Assert-True ($delivery.passed -eq $true) 'verify_delivery must accept synchronized generated output'
     Assert-True ($delivery.checks[0].synchronized -eq $true) 'verify_delivery must compare generated and compiled files'
 
+    $failureRequest = @{ func = 'verify_delivery'; root = $temporaryRoot; checks = @(@{path = 'missing-output.h'; must_contain = @('EXPECTED_SYMBOL')}) } | ConvertTo-Json -Depth 5 -Compress
+    $failureText = $null
+    try {
+        & $wrapper -ProjectPath $project -ExecutablePath $executable -Request $failureRequest | Out-Null
+    } catch {
+        $failureText = $_.Exception.Message
+    }
+    Assert-True ($null -ne $failureText) 'structured verification failure must still fail the wrapper'
+    $failure = $failureText.Substring($failureText.IndexOf('{')) | ConvertFrom-Json
+    Assert-True ($failure.code -eq 'DELIVERY_VERIFICATION_FAILED') 'failure code must survive Host CLI and wrapper'
+    Assert-True ($failure.details.failed_checks[0].missing_required[0] -eq 'EXPECTED_SYMBOL') 'first failure must include missing symbol without a second request'
+
     $bomRequest = Join-Path $temporaryRoot 'request-with-bom.json'
     $bomEncoding = [System.Text.UTF8Encoding]::new($true)
     $bomBytes = $bomEncoding.GetPreamble() + $bomEncoding.GetBytes('{"func":"find_module","module":"Com"}')
@@ -251,11 +302,22 @@ $ErrorActionPreference = 'Stop'
     $bomModule = (($bomOutput | Out-String) | ConvertFrom-Json)
     Assert-True ($bomModule.definition_ref -eq '/PublicStack/Com') 'UTF-8 BOM request files must be accepted end to end'
 
+    Assert-Fails -ExpectedText 'module is required' -Action {
+        & $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"generate_code"}'
+    }
+
     $failingRequest = Join-Path $temporaryRoot 'failing-request.json'
     Write-Utf8 -Path $failingRequest -Content '{"func":"find_module","module":"Missing"}'
-    Assert-Fails -ExpectedText "request: $failingRequest" -Action {
+    $failureText = $null
+    try {
         & $wrapper -ProjectPath $project -ExecutablePath $executable -RequestFile $failingRequest
+    } catch {
+        $failureText = $_.Exception.Message
     }
+    Assert-True ($null -ne $failureText -and $failureText.Contains("request: $failingRequest")) 'module failure must preserve request context'
+    $failure = $failureText.Substring($failureText.IndexOf('{')) | ConvertFrom-Json
+    Assert-True ($failure.code -eq 'MODULE_NOT_FOUND') 'unknown module must have a stable error code'
+    Assert-True ($failure.details.candidates -contains 'Com') 'unknown module must return a real project candidate'
 
     Assert-Fails -ExpectedText 'file changed' -Action {
         $request = [ordered]@{
@@ -327,7 +389,7 @@ $ErrorActionPreference = 'Stop'
     $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKVector.ps1'
     $packageDoctorOutput = @(& $packageInitializer -ProjectPath $packageProject -ToolPath $tool)
     $packageDoctor = (($packageDoctorOutput | Out-String) | ConvertFrom-Json)
-    Assert-True ($packageDoctor.version -eq '0.3.7') 'packaged initializer must use packaged binaries by default'
+    Assert-True ($packageDoctor.version -eq '0.3.12') 'packaged initializer must use packaged binaries by default'
 
     $activeWrapper = $packageWrapper
     $activeProject = $packageProject

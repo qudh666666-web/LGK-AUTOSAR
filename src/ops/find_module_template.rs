@@ -118,11 +118,7 @@ fn parent_container<'a>(
             candidate.group == "containers"
                 && candidate.definition_ref.len() < item.definition_ref.len()
                 && item.definition_ref.starts_with(&candidate.definition_ref)
-                && item
-                    .definition_ref
-                    .as_bytes()
-                    .get(candidate.definition_ref.len())
-                    == Some(&b'/')
+                && item.definition_ref.as_bytes().get(candidate.definition_ref.len()) == Some(&b'/')
         })
         .max_by_key(|candidate| candidate.definition_ref.len())
 }

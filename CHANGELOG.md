@@ -2,6 +2,145 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## v0.3.12 - 2026-09-13
+
+- Implementation commit: `7260a3a`. Added read-only `inspect_autosar_model`
+  and `trace_autosar_model` through doctor, resident Host, CLI and PowerShell
+  wrapper. They index generic AUTOSAR objects by XML kind, `SHORT-NAME`, stable
+  semantic path, source file and `*-REF` relationships across saved System and
+  Developer ARXML, without hard-coding Vector module display names.
+- Trace supports incoming, outgoing and bidirectional traversal. Named
+  containment edges preserve Frame-to-mapping and PDU-to-signal-mapping links;
+  AR-PACKAGE containment is omitted to reduce noise. Repeated definitions in
+  Communication and SystemExtract resolve as one semantic start while all
+  matching references remain traversable.
+- Query output defaults to 32 objects and trace defaults to depth 3, 64 nodes
+  and 128 edges. Hard limits are 512 ARXML files, 64 MiB per file, 256 MiB total,
+  depth 6, 256 nodes and 512 edges. Symlinks, oversized scopes, invalid regular
+  expressions and genuinely ambiguous start paths fail without starting
+  DaVinci or modifying the project.
+- Verified: release build produced matching v0.3.12 CLI/Host; 57 Rust tests
+  passed and one optional private-report test was ignored; Clippy `-D warnings`,
+  changed-file rustfmt and diff checks passed. A read-only scan of the current
+  Vector project indexed 2,559 objects from 20 model ARXML files (2.26 MB) in
+  about 2.4 seconds, and traced a real CAN Frame through its mapping to an N-PDU.
+- Limits: this release provides generic discovery and dependency tracing. It
+  does not yet create SWCs, ports, interfaces, data types or data mappings, and
+  it does not claim that a DBC Project Update created every application artifact.
+  No customer file was copied into the repository or changed during validation.
+
+## v0.3.11 - 2026-09-13
+
+- Implementation commit: `ebb2852`. Added `set_ecuc_value` to doctor, resident
+  Host, CLI, PowerShell wrapper, source/release Skills and onboarding/package
+  self-tests. Existing parameter values and references can now be changed by
+  real DPA module, container instance path, definition name, exact saved
+  `expected`, and new `value`; no XML lines are required in the request.
+- The operation requires one direct, unique semantic target. It compares a full
+  parsed XML-tree result with the byte-preserving raw location, escapes the new
+  text, reparses and semantically re-locates the candidate, then rechecks the
+  original bytes and uses the existing same-directory atomic replacement.
+  Commented-out XML cannot become a write target. BOM, line endings, indentation,
+  comments, attributes, ordering and every unrelated byte remain unchanged.
+- Missing containers/values, duplicate paths/definitions and stale expected
+  values fail without writing and have stable ECUC_CONTAINER_NOT_FOUND,
+  ECUC_VALUE_NOT_FOUND, ECUC_VALUE_AMBIGUOUS or
+  ECUC_VALUE_PRECONDITION_FAILED diagnostics. New values are limited to 4096
+  Unicode characters; returned old/new values are capped at 512 and only emit
+  truncation flags when applicable. Mutating batch and open-owned-GUI protections
+  are the same as `edit_file`.
+- Verified: release build produced matching v0.3.11 CLI/Host; 52 Rust tests
+  passed and one optional private-report test was ignored; Clippy `-D warnings`,
+  changed-file rustfmt and diff checks passed; the final onboarding suite passed
+  62 assertions twice; packaged EXE self-test passed 14 assertions; package
+  manifest passed 13; current-content and dependency-license guards passed.
+- Limits: changes only an existing direct parameter `<VALUE>` or reference
+  `<VALUE-REF>`. Creation/deletion, container structure and self-closing empty
+  values still require a narrow `edit_file`. No live DaVinci operation, customer
+  project mutation, public push/tag/Release or public snapshot sync was run.
+
+## v0.3.10 - 2026-09-13
+
+- Implementation commit: `53bd44d`. Borrowed the stable path plus
+  add/modify/delete result shape from claude-autosar and independently
+  implemented the Rust ECUC-specific parser, safety limits and tests. Source
+  links and adoption boundaries are recorded in docs/开源借鉴记录.md; no
+  upstream code or new runtime dependency was copied.
+- Added read-only `diff_ecuc` through doctor, resident Host, CLI and PowerShell
+  wrapper. It compares one concrete module in two project-contained ARXML files
+  and reports only changed parameter/reference values at stable semantic paths.
+  Inputs may be project-relative or absolute contained paths; files outside the
+  project, non-ARXML inputs and inputs over 64 MiB are rejected.
+- Output defaults to 32 changes, has a hard 256-change limit and caps each
+  returned old/new value at 512 Unicode characters with per-value truncation
+  flags. `path_prefix` narrows results. Counts describe the complete filtered
+  result before truncation; duplicate semantic paths fail with
+  ECUC_DIFF_AMBIGUOUS_PATH rather than being paired heuristically.
+- Verified: release build produced matching v0.3.10 CLI/Host; 45 Rust tests
+  passed and one optional private-report test was ignored; Clippy `-D warnings`,
+  changed-file rustfmt and diff checks passed; onboarding passed 59 assertions;
+  packaged EXE self-test passed 12 assertions; package manifest passed 13;
+  current-content and dependency-license guards passed.
+- Limits: compares saved ECUC parameter/reference values only. Container
+  metadata, UUID, comments, ordering and formatting changes are omitted;
+  container renames appear as delete plus add. No live DaVinci operation,
+  customer project mutation, LLM-token benchmark, public push/tag/Release or
+  public snapshot sync was performed.
+
+## v0.3.9 - 2026-09-13
+
+- Implementation commit: `8fe352d`. Borrowed the structured-field diagnostic
+  idea from claude-autosar, independently implemented in Rust with no copied
+  source or new dependency. Sources and adoption decisions: docs/开源借鉴记录.md.
+- Strict verify_delivery failures now include compact JSON with stable code,
+  original zero-based check_index, missing files, synchronization and required/
+  forbidden pattern failures. No enforce:false rerun is needed for the usual
+  diagnostic. Limits: 8 failed checks, 8 patterns per kind, counts and truncation
+  indicators. Passing checks are omitted from the strict failure response.
+- Missing/unknown modules return MODULE_REQUIRED / MODULE_NOT_FOUND. Unknown
+  names include up to 8 real DPA candidates; suggestions never silently select
+  a module for generation. Case-insensitive matching and module_name remain.
+- Existing nonzero exits and CLI/PowerShell exception envelopes are retained;
+  JSON is in the error detail, not successful stdout. Other errors remain text.
+  Normal successful responses and dependency versions are unchanged.
+- Verified: 43 Rust tests passed (one optional private-report test skipped),
+  Clippy -D warnings, changed-file formatting and git diff checks passed;
+  Build-LGKVector.ps1 rebuilt local v0.3.9 CLI/Host; 56 onboarding assertions
+  prove JSON details survive the Host/CLI/wrapper and failures still fail;
+  13 package assertions and current-content guard passed.
+- Limits: no live DaVinci generation or LLM-token benchmark was performed.
+  No customer project, public snapshot, GitHub push/tag/Release was changed.
+
+## v0.3.8 - 2026-09-13
+
+- Implementation commit: `4e1e39a`.
+- Generation now checks the single new/rewritten GenerationReport.html in
+  DPA Folders/Logs before returning passed:true. It requires zero fatal/errors,
+  successful selected generator and GENERATION phase, matching the actual ECUC
+  definition rather than a display/package name. SUCCESSFUL and WARNING report
+  summaries are supported, but do not waive the selected-generator checks.
+  Discovery only reads metadata within two log-directory levels (8192 entries);
+  only the changed report is read, capped at 32 MiB. Missing/stale/ambiguous or
+  unknown report formats fail acceptance without retrying generation.
+- generate_code requires module or the existing module_name alias. Full
+  generation remains explicit module:"all". Existing callers that omitted
+  module must migrate; optional-module queries are unchanged.
+- edit_file writes/syncs a unique same-directory temporary file, rechecks the
+  original bytes and uses rename replacement with no copy-over fallback.
+  This is not an external-writer lock or a power-loss durability guarantee;
+  per-file ACLs, alternate streams and hard-link identity are not preserved.
+- Verification: 40 Rust tests passed (one optional private-report test ignored
+  by default); that private check was separately run on two existing local
+  reports and correctly accepted success/rejected validation error. Debug
+  parser timings were approximately 10/27 ms, excluding generation and report
+  discovery. Clippy -D warnings and rustfmt checks passed using already installed
+  private components. Release build passed via Build-LGKVector.ps1; onboarding
+  51 assertions, package manifest 13 assertions and current-content guard passed.
+- Limits: no live DaVinci generation was run and no customer project was changed.
+  Report compatibility is based on the locally inspected HTML layout and
+  synthetic regression cases, not every DaVinci version. Local binaries are
+  v0.3.8 build=dev; no public snapshot sync, push, tag or Release was performed.
+
 ## v0.3.7 - 2026-08-29
 
 - Core: the resident Host is now spawned through `CreateProcessW` with

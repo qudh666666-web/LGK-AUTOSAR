@@ -121,6 +121,67 @@ fn fixture() -> (tempfile::TempDir, SessionConfig) {
     (root, config)
 }
 
+fn write_autosar_model_fixture(config: &SessionConfig) {
+    let system = config.project_path.join("Config/System");
+    let developer = config.project_path.join("Config/Developer");
+    fs::create_dir_all(&system).expect("system model dir");
+    fs::create_dir_all(&developer).expect("developer model dir");
+    fs::write(
+        system.join("Communication.arxml"),
+        r#"<AUTOSAR><AR-PACKAGES><AR-PACKAGE><SHORT-NAME>Signals</SHORT-NAME><ELEMENTS>
+        <SYSTEM-SIGNAL><SHORT-NAME>VehicleSpeed</SHORT-NAME></SYSTEM-SIGNAL>
+        <I-SIGNAL><SHORT-NAME>ISignalVehicleSpeed</SHORT-NAME><SYSTEM-SIGNAL-REF DEST="SYSTEM-SIGNAL">/Signals/VehicleSpeed</SYSTEM-SIGNAL-REF></I-SIGNAL>
+        <I-SIGNAL-I-PDU><SHORT-NAME>SpeedPdu</SHORT-NAME><I-SIGNAL-TO-I-PDU-MAPPINGS><I-SIGNAL-TO-I-PDU-MAPPING><SHORT-NAME>SpeedMap</SHORT-NAME><I-SIGNAL-REF DEST="I-SIGNAL">/Signals/ISignalVehicleSpeed</I-SIGNAL-REF></I-SIGNAL-TO-I-PDU-MAPPING></I-SIGNAL-TO-I-PDU-MAPPINGS></I-SIGNAL-I-PDU>
+        <CAN-FRAME><SHORT-NAME>SpeedFrame</SHORT-NAME><PDU-TO-FRAME-MAPPINGS><PDU-TO-FRAME-MAPPING><SHORT-NAME>FrameMap</SHORT-NAME><PDU-REF DEST="I-SIGNAL-I-PDU">/Signals/SpeedPdu</PDU-REF></PDU-TO-FRAME-MAPPING></PDU-TO-FRAME-MAPPINGS></CAN-FRAME>
+        </ELEMENTS></AR-PACKAGE></AR-PACKAGES></AUTOSAR>"#,
+    )
+    .expect("system model");
+    fs::write(
+        developer.join("Software.arxml"),
+        r#"<AUTOSAR><AR-PACKAGES><AR-PACKAGE><SHORT-NAME>Application</SHORT-NAME><ELEMENTS>
+        <APPLICATION-SW-COMPONENT-TYPE><SHORT-NAME>SpeedConsumer</SHORT-NAME><PORTS><R-PORT-PROTOTYPE><SHORT-NAME>SpeedPort</SHORT-NAME><REQUIRED-INTERFACE-TREF DEST="SENDER-RECEIVER-INTERFACE">/Application/SpeedInterface</REQUIRED-INTERFACE-TREF></R-PORT-PROTOTYPE></PORTS></APPLICATION-SW-COMPONENT-TYPE>
+        <SENDER-RECEIVER-INTERFACE><SHORT-NAME>SpeedInterface</SHORT-NAME><DATA-ELEMENTS><VARIABLE-DATA-PROTOTYPE><SHORT-NAME>Speed</SHORT-NAME><TYPE-TREF DEST="IMPLEMENTATION-DATA-TYPE">/Application/SpeedType</TYPE-TREF></VARIABLE-DATA-PROTOTYPE></DATA-ELEMENTS></SENDER-RECEIVER-INTERFACE>
+        <IMPLEMENTATION-DATA-TYPE><SHORT-NAME>SpeedType</SHORT-NAME></IMPLEMENTATION-DATA-TYPE>
+        <DATA-MAPPINGS><SHORT-NAME>SpeedDataMapping</SHORT-NAME><SYSTEM-SIGNAL-REF DEST="SYSTEM-SIGNAL">/Signals/VehicleSpeed</SYSTEM-SIGNAL-REF><DATA-ELEMENT-REF DEST="VARIABLE-DATA-PROTOTYPE">/Application/SpeedInterface/Speed</DATA-ELEMENT-REF></DATA-MAPPINGS>
+        </ELEMENTS></AR-PACKAGE></AR-PACKAGES></AUTOSAR>"#,
+    )
+    .expect("developer model");
+}
+
+#[test]
+fn inspect_autosar_model_indexes_system_and_developer_objects() {
+    let (_root, config) = fixture();
+    write_autosar_model_fixture(&config);
+    let result = CommandDispatcher::new()
+        .dispatch_batch(
+            &config,
+            r#"{"func":"inspect_autosar_model","kinds":["CAN-FRAME","APPLICATION-SW-COMPONENT-TYPE"],"limit":8}"#,
+        )
+        .expect("inspect model");
+    assert_eq!(result["total"], 2);
+    assert_eq!(result["files_scanned"], 2);
+}
+
+#[test]
+fn trace_autosar_model_crosses_references_and_containment() {
+    let (_root, config) = fixture();
+    write_autosar_model_fixture(&config);
+    let result = CommandDispatcher::new()
+        .dispatch_batch(
+            &config,
+            r#"{"func":"trace_autosar_model","start":"/Signals/VehicleSpeed","direction":"both","depth":5}"#,
+        )
+        .expect("trace model");
+    let paths = result["nodes"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .filter_map(|node| node["path"].as_str())
+        .collect::<Vec<_>>();
+    assert!(paths.contains(&"/Signals/SpeedFrame"));
+    assert!(paths.contains(&"/Application/SpeedDataMapping"));
+}
+
 #[test]
 fn accepts_utf8_bom_in_project_configuration() {
     let (root, config) = fixture();
@@ -392,6 +453,18 @@ fn reports_and_enforces_unsynchronized_or_invalid_delivery() {
     let error = ops::verify_delivery::execute(&config, &request)
         .expect_err("default enforcement must reject stale compiled output");
     assert!(error.to_string().contains("delivery verification failed"));
+    let failure: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+    assert_eq!(failure["code"], "DELIVERY_VERIFICATION_FAILED");
+    assert_eq!(failure["success"], false);
+    assert_eq!(failure["details"]["failed_checks"][0]["check_index"], 0);
+    assert_eq!(
+        failure["details"]["failed_checks"][0]["forbidden_found"],
+        json!(["CanIsr_1"])
+    );
+    assert_eq!(
+        failure["details"]["failed_checks"][0]["synchronized"],
+        false
+    );
 
     let mut diagnostic = request;
     diagnostic["enforce"] = json!(false);
@@ -436,6 +509,323 @@ fn confines_delivery_verification_to_the_declared_project_root() {
 }
 
 #[test]
+fn delivery_failure_limits_output_and_preserves_original_check_indices() {
+    let (root, config) = fixture();
+    fs::write(root.path().join("good.txt"), "content").unwrap();
+    let patterns: Vec<_> = (0..12).map(|i| format!("missing\"{i}\n")).collect();
+    let mut checks = vec![json!({"path": "good.txt"})];
+    for i in 0..10 {
+        checks.push(json!({"path": format!("missing{i}.txt"), "must_contain": patterns}));
+    }
+    let error =
+        ops::verify_delivery::execute(&config, &json!({"root": root.path(), "checks": checks}))
+            .unwrap_err();
+    let failure: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+    let details = &failure["details"];
+    assert_eq!(details["failed_count"], 10);
+    assert_eq!(details["checks_truncated"], true);
+    assert_eq!(details["failed_checks"].as_array().unwrap().len(), 8);
+    assert_eq!(details["failed_checks"][0]["check_index"], 1);
+    assert_eq!(details["failed_checks"][0]["missing_required_count"], 12);
+    assert_eq!(
+        details["failed_checks"][0]["missing_required"]
+            .as_array()
+            .unwrap()
+            .len(),
+        8
+    );
+    assert_eq!(
+        details["failed_checks"][0]["missing_required"][0],
+        patterns[0]
+    );
+    assert!(!error.to_string().contains("good.txt"));
+}
+
+#[test]
+fn unknown_module_returns_candidates_without_changing_generation_scope() {
+    let (_root, config) = fixture();
+    for request in [
+        json!({"func":"find_module", "module":"Com_driver"}),
+        json!({"func":"generate_code", "module":"Com_driver"}),
+    ] {
+        let error = CommandDispatcher::new()
+            .dispatch_batch(&config, &request.to_string())
+            .unwrap_err();
+        let failure: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+        assert_eq!(failure["code"], "MODULE_NOT_FOUND");
+        assert_eq!(failure["details"]["candidates"], json!(["Com"]));
+    }
+    assert_eq!(
+        ops::find_module::execute(&config, &json!({"module_name":"com"})).unwrap()["module"],
+        "Com"
+    );
+}
+
+#[test]
+fn diffs_ecuc_values_semantically_with_bounded_output() {
+    let (_root, config) = fixture();
+    let left = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let right = config
+        .project_path
+        .join("Config/ECUC/Test_Com_changed.arxml");
+    let changed = fs::read_to_string(&left)
+        .unwrap()
+        .replace("<VALUE>8</VALUE>", "<VALUE>16</VALUE>")
+        .replace(
+            "            </PARAMETER-VALUES>",
+            r#"            </PARAMETER-VALUES>
+            <REFERENCE-VALUES>
+              <ECUC-REFERENCE-VALUE>
+                <DEFINITION-REF DEST="ECUC-REFERENCE-DEF">/MICROSAR/Com/ComConfig/ComSignal/ComTargetRef</DEFINITION-REF>
+                <VALUE-REF DEST="ECUC-CONTAINER-VALUE">/Target/One</VALUE-REF>
+              </ECUC-REFERENCE-VALUE>
+            </REFERENCE-VALUES>"#,
+        );
+    fs::write(&right, changed).unwrap();
+
+    let result = ops::diff_ecuc::execute(
+        &config,
+        &json!({
+            "module": "com",
+            "left": "Config/ECUC/Test_Com_ecuc.arxml",
+            "right": right,
+            "path_prefix": "Com/ComConfig/SignalA",
+            "limit": 1
+        }),
+    )
+    .unwrap();
+    assert_eq!(result["total"], 2);
+    assert_eq!(
+        result["counts"],
+        json!({"add": 1, "modify": 1, "delete": 0})
+    );
+    assert_eq!(result["truncated"], true);
+    assert_eq!(result["changes"].as_array().unwrap().len(), 1);
+    assert_eq!(result["changes"][0]["op"], "modify");
+    assert_eq!(result["changes"][0]["old"], "8");
+    assert_eq!(result["changes"][0]["new"], "16");
+
+    let reverse = ops::diff_ecuc::execute(
+        &config,
+        &json!({"module":"Com", "left":right, "right":left, "limit":32}),
+    )
+    .unwrap();
+    assert_eq!(
+        reverse["counts"],
+        json!({"add": 0, "modify": 1, "delete": 1})
+    );
+}
+
+#[test]
+fn diff_ecuc_rejects_duplicate_paths_and_files_outside_project() {
+    let (root, config) = fixture();
+    let left = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let duplicate = config
+        .project_path
+        .join("Config/ECUC/Test_Com_duplicate.arxml");
+    let original = fs::read_to_string(&left).unwrap();
+    let parameter_start = original
+        .find("              <ECUC-NUMERICAL-PARAM-VALUE>")
+        .unwrap();
+    let relative_end = original[parameter_start..]
+        .find("              </ECUC-NUMERICAL-PARAM-VALUE>")
+        .unwrap();
+    let parameter_end =
+        parameter_start + relative_end + "              </ECUC-NUMERICAL-PARAM-VALUE>".len();
+    let duplicate_block = &original[parameter_start..parameter_end];
+    fs::write(
+        &duplicate,
+        original.replacen(
+            duplicate_block,
+            &format!("{duplicate_block}\n{duplicate_block}"),
+            1,
+        ),
+    )
+    .unwrap();
+    let error = ops::diff_ecuc::execute(
+        &config,
+        &json!({"module":"Com", "left":left, "right":duplicate}),
+    )
+    .unwrap_err();
+    let failure: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+    assert_eq!(failure["code"], "ECUC_DIFF_AMBIGUOUS_PATH");
+
+    let outside = root.path().join("outside.arxml");
+    fs::write(&outside, original).unwrap();
+    assert!(ops::diff_ecuc::execute(
+        &config,
+        &json!({"module":"Com", "left":outside, "right":left}),
+    )
+    .is_err());
+}
+
+#[test]
+fn sets_one_ecuc_value_semantically_and_preserves_unrelated_bytes() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let original_text = fs::read_to_string(&file).unwrap().replace('\n', "\r\n");
+    let mut original = vec![0xEF, 0xBB, 0xBF];
+    original.extend_from_slice(original_text.as_bytes());
+    fs::write(&file, &original).unwrap();
+
+    let result = ops::set_ecuc_value::execute(
+        &config,
+        &json!({
+            "module": "com",
+            "container_path": "Com/ComConfig/SignalA",
+            "parameter": "ComBitPosition",
+            "expected": "8",
+            "value": "16"
+        }),
+    )
+    .unwrap();
+    assert_eq!(result["changed"], true);
+    assert_eq!(result["path"], "Com/ComConfig/SignalA/ComBitPosition");
+    assert_eq!(result["old"], "8");
+    assert_eq!(result["new"], "16");
+    assert_eq!(result["kind"], "parameter");
+
+    let expected = original_text.replace("<VALUE>8</VALUE>", "<VALUE>16</VALUE>");
+    let mut expected_bytes = vec![0xEF, 0xBB, 0xBF];
+    expected_bytes.extend_from_slice(expected.as_bytes());
+    assert_eq!(fs::read(&file).unwrap(), expected_bytes);
+
+    let unchanged = ops::set_ecuc_value::execute(
+        &config,
+        &json!({
+            "module": "Com",
+            "container_path": "/ComConfig/SignalA",
+            "parameter": "/MICROSAR/Com/ComConfig/ComSignal/ComBitPosition",
+            "expected": "16",
+            "value": "16"
+        }),
+    )
+    .unwrap();
+    assert_eq!(unchanged["changed"], false);
+    assert_eq!(fs::read(&file).unwrap(), expected_bytes);
+}
+
+#[test]
+fn semantic_ecuc_edit_rejects_stale_ambiguous_and_indirect_targets() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let original = fs::read(&file).unwrap();
+    let stale = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig/SignalA",
+            "parameter":"ComBitPosition", "expected":"7", "value":"16"}),
+    )
+    .unwrap_err();
+    let diagnostic: serde_json::Value = serde_json::from_str(&stale.to_string()).unwrap();
+    assert_eq!(diagnostic["code"], "ECUC_VALUE_PRECONDITION_FAILED");
+    assert_eq!(diagnostic["details"]["current"], "8");
+
+    let indirect = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig",
+            "parameter":"ComBitPosition", "expected":"8", "value":"16"}),
+    )
+    .unwrap_err();
+    let diagnostic: serde_json::Value = serde_json::from_str(&indirect.to_string()).unwrap();
+    assert_eq!(diagnostic["code"], "ECUC_VALUE_NOT_FOUND");
+    assert_eq!(fs::read(&file).unwrap(), original);
+
+    let text = String::from_utf8(original.clone()).unwrap();
+    let start = text
+        .find("          <ECUC-CONTAINER-VALUE>")
+        .expect("nested container start");
+    let end_marker = "          </ECUC-CONTAINER-VALUE>";
+    let end = start + text[start..].find(end_marker).unwrap() + end_marker.len();
+    let duplicate = format!("{}\n{}", &text[start..end], &text[start..end]);
+    fs::write(&file, text.replacen(&text[start..end], &duplicate, 1)).unwrap();
+    let ambiguous = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig/SignalA",
+            "parameter":"ComBitPosition", "expected":"8", "value":"16"}),
+    )
+    .unwrap_err();
+    let diagnostic: serde_json::Value = serde_json::from_str(&ambiguous.to_string()).unwrap();
+    assert_eq!(diagnostic["code"], "ECUC_VALUE_AMBIGUOUS");
+}
+
+#[test]
+fn sets_existing_ecuc_reference_semantically() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let original = fs::read_to_string(&file).unwrap();
+    let with_reference = original.replace(
+        "            </PARAMETER-VALUES>",
+        r#"            </PARAMETER-VALUES>
+            <REFERENCE-VALUES>
+              <ECUC-REFERENCE-VALUE>
+                <DEFINITION-REF DEST="ECUC-REFERENCE-DEF">/Vendor/Com/ComConfig/ComSignal/ComTargetRef</DEFINITION-REF>
+                <VALUE-REF DEST="ECUC-CONTAINER-VALUE">/Target/One</VALUE-REF>
+              </ECUC-REFERENCE-VALUE>
+            </REFERENCE-VALUES>"#,
+    );
+    fs::write(&file, with_reference).unwrap();
+
+    let result = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig/SignalA",
+            "reference":"ComTargetRef", "expected":"/Target/One", "value":"/Target/Two"}),
+    )
+    .unwrap();
+    assert_eq!(result["kind"], "reference");
+    assert_eq!(result["new"], "/Target/Two");
+    let edited = fs::read_to_string(&file).unwrap();
+    assert!(edited.contains(">/Target/Two</VALUE-REF>"));
+    assert!(!edited.contains(">/Target/One</VALUE-REF>"));
+}
+
+#[test]
+fn semantic_ecuc_edit_never_treats_commented_xml_as_the_target() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let original = fs::read_to_string(&file).unwrap();
+    let fake = r#"<!-- <ECUC-NUMERICAL-PARAM-VALUE>
+      <DEFINITION-REF>/MICROSAR/Com/ComConfig/ComSignal/ComBitPosition</DEFINITION-REF>
+      <VALUE>8</VALUE>
+    </ECUC-NUMERICAL-PARAM-VALUE> -->"#;
+    let content = original.replace("<VALUE>8</VALUE>", "<VALUE/>").replace(
+        "            <PARAMETER-VALUES>",
+        &format!("            {fake}\n            <PARAMETER-VALUES>"),
+    );
+    fs::write(&file, &content).unwrap();
+
+    let error = ops::set_ecuc_value::execute(
+        &config,
+        &json!({"module":"Com", "container_path":"ComConfig/SignalA",
+            "parameter":"ComBitPosition", "expected":"8", "value":"16"}),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("parsed semantic target"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), content);
+}
+
+#[test]
+fn semantic_ecuc_edit_is_mutating_and_doctor_only_validates() {
+    let (_root, config) = fixture();
+    let file = config.project_path.join("Config/ECUC/Test_Com_ecuc.arxml");
+    let request = json!({"func":"set_ecuc_value", "module":"Com",
+        "container_path":"ComConfig/SignalA", "parameter":"ComBitPosition",
+        "expected":"8", "value":"16"});
+    CommandDispatcher::validate_batch(&config, &request.to_string()).unwrap();
+    assert!(fs::read_to_string(&file)
+        .unwrap()
+        .contains("<VALUE>8</VALUE>"));
+
+    let batch = json!([request, {"func":"find_module", "module":"Com"}]);
+    let error = CommandDispatcher::new()
+        .dispatch_batch(&config, &batch.to_string())
+        .unwrap_err();
+    assert!(error.to_string().contains("must be standalone requests"));
+    assert!(fs::read_to_string(&file)
+        .unwrap()
+        .contains("<VALUE>8</VALUE>"));
+}
+
+#[test]
 fn doctor_rejects_missing_required_fields_before_starting_davinci() {
     let (_root, config) = fixture();
     let missing_query_module =
@@ -447,8 +837,23 @@ fn doctor_rejects_missing_required_fields_before_starting_davinci() {
 
     let implicit_full_generation =
         CommandDispatcher::validate_batch(&config, r#"{"func":"generate_code"}"#)
-            .expect("omitted generation module must keep legacy module=all behavior");
-    assert_eq!(implicit_full_generation, vec!["generate_code"]);
+            .expect_err("omitted generation module must not cause full generation");
+    assert!(implicit_full_generation
+        .to_string()
+        .contains("module is required"));
+    assert!(CommandDispatcher::new()
+        .dispatch_batch(&config, r#"{"func":"generate_code"}"#)
+        .is_err());
+    assert!(CommandDispatcher::validate_batch(
+        &config,
+        r#"{"func":"generate_code","module":"all"}"#
+    )
+    .is_ok());
+    assert!(CommandDispatcher::validate_batch(
+        &config,
+        r#"{"func":"generate_code","module_name":"Com"}"#
+    )
+    .is_ok());
 
     let mixed_inspection = CommandDispatcher::validate_batch(
         &config,

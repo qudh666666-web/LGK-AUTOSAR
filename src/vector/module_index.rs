@@ -75,7 +75,25 @@ impl ModuleIndex {
         self.modules
             .iter()
             .find(|item| item.module.eq_ignore_ascii_case(module))
-            .ok_or_else(|| anyhow::anyhow!("module not found in current project: {module}"))
+            .ok_or_else(|| {
+                let query = module.to_ascii_lowercase();
+                let mut related: Vec<_> = self.modules.iter().filter(|item| {
+                    let name = item.module.to_ascii_lowercase();
+                    name.contains(&query) || query.contains(&name)
+                }).collect();
+                // Prefer the closest prefix (e.g. a driver package -> CanTrcv,
+                // before Can). Never substitute a suggestion in a mutation.
+                related.sort_by(|a, b| b.module.len().cmp(&a.module.len()).then(a.module.cmp(&b.module)));
+                let source: Vec<_> = if related.is_empty() { self.modules.iter().collect() } else { related };
+                let candidates: Vec<_> = source.iter().take(8).map(|item| &item.module).collect();
+                crate::diagnostic::failure(
+                    "MODULE_NOT_FOUND", "module not found in current project", "module",
+                    serde_json::json!({"requested": module, "candidates": candidates,
+                        "candidates_truncated": source.len() > 8,
+                        "available_count": self.modules.len(),
+                        "next": "Use a listed module, or find_module with module=all to inspect all names"}),
+                )
+            })
     }
 }
 
@@ -101,4 +119,36 @@ fn normalize_relative(project: &Path, raw: &str) -> PathBuf {
         .unwrap_or(&normalized)
         .to_string();
     project.join(relative)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suggestions_are_bounded_and_prefer_specific_project_names() {
+        let mut names = vec!["Can".to_owned(), "CanTrcv".to_owned()];
+        names.extend((0..12).map(|i| format!("VendorModule{i}")));
+        let index = ModuleIndex {
+            modules: names
+                .into_iter()
+                .map(|module| ModuleInfo {
+                    name: module.clone(),
+                    module,
+                    config_path: PathBuf::from("unused.arxml"),
+                })
+                .collect(),
+        };
+        let error = index.find("CanTrcv_Package").unwrap_err();
+        let value: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+        assert_eq!(
+            value["details"]["candidates"],
+            serde_json::json!(["CanTrcv", "Can"])
+        );
+        let error = index.find("Unrelated\"\n").unwrap_err();
+        let value: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+        assert_eq!(value["details"]["candidates"].as_array().unwrap().len(), 8);
+        assert_eq!(value["details"]["candidates_truncated"], true);
+        assert_eq!(value["details"]["available_count"], 14);
+    }
 }

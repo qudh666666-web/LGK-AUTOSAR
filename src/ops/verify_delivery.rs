@@ -60,18 +60,33 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     }
 
     let passed = failed_paths.is_empty();
-    let response = json!({
-        "root": root,
-        "passed": passed,
-        "checks": results
-    });
     if !passed && enforce {
-        bail!(
-            "delivery verification failed for: {}; rerun with enforce=false to inspect structured details",
-            failed_paths.join(", ")
-        );
+        let failures: Vec<_> = results
+            .iter()
+            .enumerate()
+            .filter(|(_, result)| result["passed"] == false)
+            .take(8)
+            .map(|(index, result)| {
+                let mut detail = result.clone();
+                detail["check_index"] = json!(index);
+                for key in ["missing_required", "forbidden_found"] {
+                    if let Some(items) = result[key].as_array() {
+                        detail[format!("{key}_count")] = json!(items.len());
+                        detail[key] = json!(items.iter().take(8).collect::<Vec<_>>());
+                    }
+                }
+                detail
+            })
+            .collect();
+        return Err(crate::diagnostic::failure(
+            "DELIVERY_VERIFICATION_FAILED",
+            "delivery verification failed",
+            "checks",
+            json!({"passed": false, "failed_count": failed_paths.len(),
+                "failed_checks": failures, "checks_truncated": failed_paths.len() > 8}),
+        ));
     }
-    Ok(response)
+    Ok(json!({"root": root, "passed": passed, "checks": results}))
 }
 
 fn verify_one(root: &Path, check: &Value) -> Result<Value> {
