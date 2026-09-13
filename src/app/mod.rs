@@ -11,7 +11,7 @@ use crate::project::SessionConfig;
 pub const DEFAULT_HOST_PORT: u16 = 32483;
 pub const DEFAULT_HOST_PROBE_PORT: u16 = DEFAULT_HOST_PORT + 1;
 pub const HOST_PROTOCOL_VERSION: u32 = 2;
-pub const BUILD_ID: &str = match option_env!("LGK_VECTOR_BUILD_ID") {
+pub const BUILD_ID: &str = match option_env!("LGK_AUTOSAR_BUILD_ID") {
     Some(value) => value,
     None => "dev",
 };
@@ -45,7 +45,7 @@ pub fn token_file() -> PathBuf {
         .and_then(|path| path.parent().map(PathBuf::from))
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join(".lgk-vector").join("host.token")
+    base.join(".lgk-autosar").join("host.token")
 }
 
 #[cfg(test)]

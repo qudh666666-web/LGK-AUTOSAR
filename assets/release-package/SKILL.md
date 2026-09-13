@@ -1,14 +1,14 @@
 ---
-name: lgk-vector
+name: lgk-autosar
 description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修改、生成、DBC 导入和常驻 Host 正常关闭。
 ---
 
-# LGK-Vector
+# LGK-AUTOSAR
 
-所有请求都使用同目录的 `Invoke-LGKVector.ps1` 包装器。本运行包要求电脑中
+所有请求都使用同目录的 `Invoke-LGKAutosar.ps1` 包装器。本运行包要求电脑中
 已合法安装匹配的 DaVinci/SIP，并且目标工程 Cfg 目录内存在
-`lgk-vector.json`；若配置不存在，先使用同目录的
-`Initialize-LGKVectorProject.ps1`。
+`lgk-autosar.json`；若配置不存在，先使用同目录的
+`Initialize-LGKAutosarProject.ps1`。
 
 ## 默认快速流程
 
@@ -34,7 +34,7 @@ description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修�
 - 模块找不到时先检查错误中的当前工程候选；候选仅为提示，不自动改名生成。
   错误仍以异常/非零退出返回，结构化 JSON 位于错误详情，成功格式保持原样。
 
-- 能使用 LGK-Vector 完成的 DaVinci ECUC 改动，不要手工改写 ARXML。
+- 能使用 LGK-AUTOSAR 完成的 DaVinci ECUC 改动，不要手工改写 ARXML。
 - `set_ecuc_value`、`edit_file`、`import_dbc`、`update_project`、`auto_solve_errors`、
   `generate_code` 和 `shutdown_host` 必须各自单独发送，不能混在数组请求中。
 - `auto_solve_errors` 必须先有最新错误列表、用户明确同意，并传入
@@ -54,7 +54,7 @@ description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修�
 ## 示例
 
 ```powershell
-& "<skill-root>\Invoke-LGKVector.ps1" `
+& "<skill-root>\Invoke-LGKAutosar.ps1" `
   -ProjectPath "D:\\Work\\Vehicle\\Cfg" `
   -Request '{"func":"inspect_ecuc_containers","module":"Com","container":"ComSignal"}'
 ```
@@ -62,7 +62,7 @@ description: 用于快速、可验证地完成 Vector DaVinci ECUC 查询、修�
 交付前检查示例：
 
 ```powershell
-& "<skill-root>\Invoke-LGKVector.ps1" `
+& "<skill-root>\Invoke-LGKAutosar.ps1" `
   -ProjectPath "D:\\Work\\Vehicle\\Cfg" `
   -Request '{"func":"verify_delivery","root":"D:\\Work\\Vehicle","checks":[{"path":"Proj_Code\\Gen\\Can_Lcfg.c","same_as":"Proj_Config\\Gen\\Can_Lcfg.c","must_contain":["CanIsr_0"],"must_not_contain":["CanIsr_1"]}]}'
 ```

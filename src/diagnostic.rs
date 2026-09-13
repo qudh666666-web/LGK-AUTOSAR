@@ -1,6 +1,6 @@
 //! Compact JSON details inside the existing nonzero-exit error channel.
 //! Inspired by structured field errors in claude-autosar; independently
-//! implemented for LGK-Vector's existing Rust/Host/PowerShell protocol.
+//! implemented for LGK-AUTOSAR's existing Rust/Host/PowerShell protocol.
 use serde_json::{json, Value};
 
 pub(crate) fn failure(code: &str, error: &str, field: &str, details: Value) -> anyhow::Error {

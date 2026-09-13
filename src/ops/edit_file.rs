@@ -88,7 +88,7 @@ pub(crate) fn replace_checked(path: &Path, original: &[u8], encoded: &[u8]) -> R
     // Same-directory rename replaces the complete file without truncating it.
     // Never fall back to copying over the destination when rename is refused.
     let temp_path = path.with_extension(format!(
-        "lgk-vector-{}-{}.tmp",
+        "lgk-autosar-{}-{}.tmp",
         std::process::id(),
         rand::random::<u64>()
     ));

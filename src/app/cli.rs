@@ -241,7 +241,7 @@ fn send_host_request(request: HostRequest, timeout: Duration) -> Result<HostResp
     let mut response = String::new();
     BufReader::new(stream)
         .read_line(&mut response)
-        .context("LGK-Vector request exceeded the 3-minute operation budget")?;
+        .context("LGK-AUTOSAR request exceeded the 3-minute operation budget")?;
     if response.trim().is_empty() {
         bail!("resident host returned an empty response");
     }
@@ -329,7 +329,7 @@ fn acquire_request_lock() -> Result<fs::File> {
         fs::create_dir_all(parent)?;
     }
     open_request_lock(&path).with_context(|| {
-        "another LGK-Vector request is already running from this installation; wait for it to finish"
+        "another LGK-AUTOSAR request is already running from this installation; wait for it to finish"
     })
 }
 
@@ -375,11 +375,11 @@ fn start_host(token_path: &Path) -> Result<()> {
 fn host_executable(directory: &Path) -> PathBuf {
     #[cfg(windows)]
     {
-        directory.join("lgk-vector-host.exe")
+        directory.join("lgk-autosar-host.exe")
     }
     #[cfg(not(windows))]
     {
-        directory.join("lgk-vector-host")
+        directory.join("lgk-autosar-host")
     }
 }
 
@@ -597,15 +597,15 @@ mod tests {
     #[test]
     fn windows_command_line_quotes_paths_with_spaces() {
         let line = windows_command_line(&[
-            Path::new(r"C:\Tools\LGK Vector\lgk-vector-host.exe"),
+            Path::new(r"C:\Tools\LGK Vector\lgk-autosar-host.exe"),
             Path::new("--port"),
             Path::new("32483"),
             Path::new("--token-file"),
-            Path::new(r"C:\Users\lgk user\.lgk-vector\host.token"),
+            Path::new(r"C:\Users\lgk user\.lgk-autosar\host.token"),
         ]);
         assert_eq!(
             decode(&line),
-            "\"C:\\Tools\\LGK Vector\\lgk-vector-host.exe\" --port 32483 --token-file \"C:\\Users\\lgk user\\.lgk-vector\\host.token\""
+            "\"C:\\Tools\\LGK Vector\\lgk-autosar-host.exe\" --port 32483 --token-file \"C:\\Users\\lgk user\\.lgk-autosar\\host.token\""
         );
     }
 

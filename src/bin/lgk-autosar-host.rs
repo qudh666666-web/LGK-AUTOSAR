@@ -19,10 +19,10 @@ fn run() -> anyhow::Result<()> {
                     anyhow::bail!("--version does not accept another argument");
                 }
                 println!(
-                    "lgk-vector-host {} protocol={} build={}",
+                    "lgk-autosar-host {} protocol={} build={}",
                     env!("CARGO_PKG_VERSION"),
-                    lgk_vector::app::HOST_PROTOCOL_VERSION,
-                    lgk_vector::app::BUILD_ID
+                    lgk_autosar::app::HOST_PROTOCOL_VERSION,
+                    lgk_autosar::app::BUILD_ID
                 );
                 return Ok(());
             }
@@ -41,8 +41,8 @@ fn run() -> anyhow::Result<()> {
             other => anyhow::bail!("unsupported argument: {other}"),
         }
     }
-    let port = port.unwrap_or(lgk_vector::app::DEFAULT_HOST_PORT);
-    let token_file = token_file.unwrap_or_else(lgk_vector::app::token_file);
+    let port = port.unwrap_or(lgk_autosar::app::DEFAULT_HOST_PORT);
+    let token_file = token_file.unwrap_or_else(lgk_autosar::app::token_file);
     // Host 的业务循环、Token 校验和正常关闭都在 app::host 中实现。
-    lgk_vector::app::host::run(port, &token_file)
+    lgk_autosar::app::host::run(port, &token_file)
 }

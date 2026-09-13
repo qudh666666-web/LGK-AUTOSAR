@@ -6,7 +6,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-$temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lgk-vector-package-guard-" + [Guid]::NewGuid().ToString('N'))
+$temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lgk-autosar-package-guard-" + [Guid]::NewGuid().ToString('N'))
 
 function Assert-True([bool]$Condition, [string]$Message) {
     if (-not $Condition) {
@@ -16,11 +16,11 @@ function Assert-True([bool]$Condition, [string]$Message) {
 
 try {
     $initialPackage = Join-Path $temporaryRoot 'initial-package'
-    & (Join-Path $repository 'scripts\Sync-LGKVectorPackage.ps1') `
+    & (Join-Path $repository 'scripts\Sync-LGKAutosarPackage.ps1') `
         -SourceRoot $repository `
         -DestinationRoot $initialPackage | Out-Null
-    Assert-True (Test-Path -LiteralPath (Join-Path $initialPackage 'lgk-vector\SKILL.md') -PathType Leaf) 'release package must include the installable Skill'
-    Assert-True (Test-Path -LiteralPath (Join-Path $initialPackage 'lgk-vector\Invoke-LGKVector.ps1') -PathType Leaf) 'release package must include the runtime wrapper'
+    Assert-True (Test-Path -LiteralPath (Join-Path $initialPackage 'lgk-autosar\SKILL.md') -PathType Leaf) 'release package must include the installable Skill'
+    Assert-True (Test-Path -LiteralPath (Join-Path $initialPackage 'lgk-autosar\Invoke-LGKAutosar.ps1') -PathType Leaf) 'release package must include the runtime wrapper'
     Assert-True (Test-Path -LiteralPath (Join-Path $initialPackage 'test\Run-ExeSelfTest.ps1') -PathType Leaf) 'release package must map the EXE self-test to test/'
     $selfTestBytes = [System.IO.File]::ReadAllBytes((Join-Path $initialPackage 'test\Run-ExeSelfTest.ps1'))
     Assert-True ($selfTestBytes.Length -ge 3 -and $selfTestBytes[0] -eq 0xEF -and $selfTestBytes[1] -eq 0xBB -and $selfTestBytes[2] -eq 0xBF) 'Chinese Windows PowerShell self-test must use UTF-8 BOM'
@@ -56,7 +56,7 @@ try {
     Assert-True (Test-Path -LiteralPath (Join-Path $fixture '.gitignore') -PathType Leaf) 'fixture must retain dotfiles'
 
     & git -C $fixture init | Out-Null
-    & git -C $fixture config user.name 'LGK-Vector Package Test'
+    & git -C $fixture config user.name 'LGK-AUTOSAR Package Test'
     & git -C $fixture config user.email 'package-test@users.noreply.github.com'
     & git -C $fixture add -A
     & git -C $fixture commit -m 'Create public fixture' | Out-Null
@@ -79,7 +79,7 @@ try {
     Assert-True ($candidateFiles -notcontains 'assets/CustomerSecret.arxml') 'ignored ARXML must be absent from the Git release manifest'
 
     $repacked = Join-Path $temporaryRoot 'repacked'
-    & (Join-Path $fixture 'scripts\Sync-LGKVectorPackage.ps1') `
+    & (Join-Path $fixture 'scripts\Sync-LGKAutosarPackage.ps1') `
         -SourceRoot $fixture `
         -DestinationRoot $repacked | Out-Null
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $repacked 'docs\CustomerSecret.dbc'))) 'ignored DBC must not be copied into the package'
@@ -93,7 +93,7 @@ try {
     }
     $pdbPackage = Join-Path $temporaryRoot 'pdb-package'
     try {
-        & (Join-Path $fixture 'scripts\Sync-LGKVectorPackage.ps1') `
+        & (Join-Path $fixture 'scripts\Sync-LGKAutosarPackage.ps1') `
             -SourceRoot $fixture `
             -DestinationRoot $pdbPackage | Out-Null
         throw 'Expected the package guard to reject a tracked PDB file'
@@ -112,7 +112,7 @@ try {
     $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\') + '\'
     $resolvedTemporary = [System.IO.Path]::GetFullPath($temporaryRoot)
     if ($resolvedTemporary.StartsWith($tempBase, [StringComparison]::OrdinalIgnoreCase) -and
-        (Split-Path -Leaf $resolvedTemporary).StartsWith('lgk-vector-package-guard-')) {
+        (Split-Path -Leaf $resolvedTemporary).StartsWith('lgk-autosar-package-guard-')) {
         if (Test-Path -LiteralPath $resolvedTemporary) {
             Remove-Item -LiteralPath $resolvedTemporary -Recurse -Force
         }

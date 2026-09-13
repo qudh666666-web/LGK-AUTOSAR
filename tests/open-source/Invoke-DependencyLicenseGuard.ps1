@@ -41,7 +41,7 @@ $allowed = @(
     'Zlib'
 )
 $failures = New-Object System.Collections.Generic.List[string]
-foreach ($package in @($selectedPackages | Where-Object { $_.name -ne 'lgk-vector' })) {
+foreach ($package in @($selectedPackages | Where-Object { $_.name -ne 'lgk-autosar' })) {
     if ([string]::IsNullOrWhiteSpace([string]$package.license)) {
         $failures.Add("$($package.name) $($package.version): missing SPDX license expression")
         continue
@@ -62,6 +62,6 @@ if ($failures.Count -ne 0) {
 [pscustomobject]@{
     valid = $true
     target = $Target
-    dependency_packages = @($selectedPackages | Where-Object { $_.name -ne 'lgk-vector' }).Count
+    dependency_packages = @($selectedPackages | Where-Object { $_.name -ne 'lgk-autosar' }).Count
     allowed_identifiers = $allowed
 } | ConvertTo-Json -Depth 3

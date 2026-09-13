@@ -1,28 +1,28 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter()]
     [string]$SourceRoot = (Split-Path -Parent $PSScriptRoot),
 
     [Parameter()]
     # Common paths:
-    #   Codex (default): $env:USERPROFILE\.codex\skills\lgk-vector
-    #   Claude Code:     $env:USERPROFILE\.claude\skills\lgk-vector
-    #   OpenCode:        $env:USERPROFILE\.config\opencode\skills\lgk-vector
+    #   Codex (default): $env:USERPROFILE\.codex\skills\lgk-autosar
+    #   Claude Code:     $env:USERPROFILE\.claude\skills\lgk-autosar
+    #   OpenCode:        $env:USERPROFILE\.config\opencode\skills\lgk-autosar
     # This source-tree junction installer accepts any dedicated SkillPath.
-    [string]$SkillPath = (Join-Path $env:USERPROFILE '.codex\skills\lgk-vector')
+    [string]$SkillPath = (Join-Path $env:USERPROFILE '.codex\skills\lgk-autosar')
 )
 
 $source = (Resolve-Path -LiteralPath $SourceRoot -ErrorAction Stop).Path.TrimEnd('\')
 foreach ($required in @('SKILL.md', 'Cargo.toml', 'src', 'scripts')) {
     if (-not (Test-Path -LiteralPath (Join-Path $source $required))) {
-        throw "SourceRoot is not a complete LGK-Vector source tree: $source"
+        throw "SourceRoot is not a complete LGK-AUTOSAR source tree: $source"
     }
 }
 
 $skill = [System.IO.Path]::GetFullPath($SkillPath).TrimEnd('\')
 $skillParent = Split-Path -Parent $skill
 if ([string]::IsNullOrWhiteSpace($skillParent) -or $skill -eq [System.IO.Path]::GetPathRoot($skill)) {
-    throw 'SkillPath must be a dedicated lgk-vector directory'
+    throw 'SkillPath must be a dedicated lgk-autosar directory'
 }
 New-Item -ItemType Directory -Force -Path $skillParent | Out-Null
 

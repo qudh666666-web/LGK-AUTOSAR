@@ -1,4 +1,4 @@
-# LGK-Vector: cross-agent instructions
+# LGK-AUTOSAR: cross-agent instructions
 
 This repository is an open-source, local bridge for a user's licensed Vector
 DaVinci Configurator installation. It contains no DaVinci, SIP, license, or
@@ -11,9 +11,9 @@ run PowerShell.
 1. Read this file before changing a Vector ECUC project.
 2. For the full request contract and examples, read `SKILL.md` and then the
    relevant section of `docs/跨工程接入.md`.
-3. Use `scripts/Invoke-LGKVector.ps1` as the normal entry point. It starts,
+3. Use `scripts/Invoke-LGKAutosar.ps1` as the normal entry point. It starts,
    checks, and closes the paired resident Host correctly.
-4. Each target DaVinci Cfg directory owns only its `lgk-vector.json`; keep the
+4. Each target DaVinci Cfg directory owns only its `lgk-autosar.json`; keep the
    tool source in one shared directory, not copied into customer projects.
 
 ## Safe ECUC workflow
@@ -21,7 +21,7 @@ run PowerShell.
 - Inspect first: use `find_module`, `inspect_ecuc_containers`, `inspect_autosar_model`,
   `trace_autosar_model`, `diff_ecuc`,
   `find_module_template`, and `get_param_definition` before proposing a change.
-- For DaVinci configuration, use LGK-Vector requests rather than manually
+- For DaVinci configuration, use LGK-AUTOSAR requests rather than manually
   editing ARXML. Use `set_ecuc_value` for an existing parameter/reference and
   `edit_file` only for a scoped structural text change with exact expected text.
 - Before `set_ecuc_value`, `edit_file`, `import_dbc`, or `update_project`, save and close the
@@ -40,35 +40,35 @@ run PowerShell.
 
 ```powershell
 # Create the project-local configuration and run static preflight.
-& ".\scripts\Initialize-LGKVectorProject.ps1" `
+& ".\scripts\Initialize-LGKAutosarProject.ps1" `
   -ProjectPath "D:\\Work\\Vehicle\\Cfg" -ToolPath "D:\\VectorSIP"
 
 # Normal read-only query. The wrapper starts the matching local Host if needed.
-& ".\scripts\Invoke-LGKVector.ps1" `
+& ".\scripts\Invoke-LGKAutosar.ps1" `
   -ProjectPath "D:\\Work\\Vehicle\\Cfg" `
   -Request '{"func":"find_module","module":"Com"}'
 
 # Required normal cleanup.
-& ".\scripts\Invoke-LGKVector.ps1" `
+& ".\scripts\Invoke-LGKAutosar.ps1" `
   -ProjectPath "D:\\Work\\Vehicle\\Cfg" `
   -Request '{"func":"shutdown_host"}'
 ```
 
 Run requests from the selected tool installation, or provide an explicit
-`-ExecutablePath` for a release package. `lgk-vector.json` contains the local
+`-ExecutablePath` for a release package. `lgk-autosar.json` contains the local
 `tool_path`; its directory determines the project path.
 
 ## Agent compatibility
 
 - **Codex:** load the root `SKILL.md` after installing it with
-  `scripts/Install-LGKVectorSkill.ps1`.
+  `scripts/Install-LGKAutosarSkill.ps1`.
 - **OpenCode:** it reads this root `AGENTS.md`; it can also discover the native
-  `.agents/skills/lgk-vector/SKILL.md` entry in a cloned repository.
+  `.agents/skills/lgk-autosar/SKILL.md` entry in a cloned repository.
 - **Other agents:** treat this file as the authoritative project workflow and
   invoke the same wrapper. No agent-specific API is required.
 
 If an agent cannot read project rule files automatically, tell it explicitly:
-“Read `AGENTS.md` and `SKILL.md` before operating LGK-Vector.”
+“Read `AGENTS.md` and `SKILL.md` before operating LGK-AUTOSAR.”
 
 ## Testing and releases
 
@@ -78,7 +78,7 @@ The source repository intentionally has one top-level `tests/` directory:
   maintainers and CI.
 - `tests/release/` is the small synthetic EXE self-test source. The package
   script maps it to the single user-facing `test/` directory in the minimal
-  Agent Skill ZIP; the runtime itself is mapped to `lgk-vector/`.
+  Agent Skill ZIP; the runtime itself is mapped to `lgk-autosar/`.
 
 For a downloaded release, double-click `test/一键测试EXE.cmd`. It verifies the
 two EXEs and local synthetic behavior; it does not prove a proprietary

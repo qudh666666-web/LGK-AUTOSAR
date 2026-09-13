@@ -1,4 +1,4 @@
-# LGK-Vector
+# LGK-AUTOSAR
 
 An open-source local command-line bridge for inspecting and updating AUTOSAR ECUC projects with a user-supplied, licensed Vector DaVinci Configurator installation.
 
@@ -25,41 +25,41 @@ cargo build --release --locked
 & .\tests\onboarding\Invoke-OnboardingSmoke.ps1
 ```
 
-The release binaries are `lgk-vector` and `lgk-vector-host`. On Windows, keep both `.exe` files in the same directory. Their `--version` output includes the semantic version, Host protocol, and source build ID; the wrapper refuses a partially rebuilt or stale pair even when the semantic version alone still matches.
+The release binaries are `lgk-autosar` and `lgk-autosar-host`. On Windows, keep both `.exe` files in the same directory. Their `--version` output includes the semantic version, Host protocol, and source build ID; the wrapper refuses a partially rebuilt or stale pair even when the semantic version alone still matches.
 End users of a GitHub Release do not need Rust; Rust is required only when building or contributing from source.
 
 ## Shared Windows installation
 
-For the shortest end-user path, download the `LGK-Vector-skill-*-windows-x64.zip` asset from a GitHub Release and extract it. It is intentionally a small Agent Skill package: a `lgk-vector` runtime folder, the two matching EXEs, two PowerShell entry scripts, concise Agent instructions, legal notices, and one user-facing `test` folder. It contains no Rust source, CI, development tests, or long maintainer documentation; using it does not require Rust. The GitHub repository remains the complete source and maintenance distribution.
+For the shortest end-user path, download the `LGK-AUTOSAR-skill-*-windows-x64.zip` asset from a GitHub Release and extract it. It is intentionally a small Agent Skill package: a `lgk-autosar` runtime folder, the two matching EXEs, two PowerShell entry scripts, concise Agent instructions, legal notices, and one user-facing `test` folder. It contains no Rust source, CI, development tests, or long maintainer documentation; using it does not require Rust. The GitHub repository remains the complete source and maintenance distribution.
 
 On a computer without Rust or DaVinci, double-click `test\一键测试EXE.cmd` after extraction. The bundled synthetic self-test validates the two EXEs, Unicode paths, local ECUC inspection, template caching, and normal Host shutdown. It does not launch or imitate proprietary DaVinci; the target computer's lawful DaVinci/SIP installation is still required for generation and Project Update.
 
-Keep one writable source tree for all projects, normally `D:\Tools\LGK-Vector`. Do not copy the tool into every AUTOSAR repository. Build it once, then install the Codex Skill as a directory junction to the same source:
+Keep one writable source tree for all projects, normally `D:\Tools\LGK-AUTOSAR`. Do not copy the tool into every AUTOSAR repository. Build it once, then install the Codex Skill as a directory junction to the same source:
 
 ```powershell
-& "D:\Tools\LGK-Vector\scripts\Install-LGKVectorSkill.ps1"
+& "D:\Tools\LGK-AUTOSAR\scripts\Install-LGKAutosarSkill.ps1"
 ```
 
-The default junction is `C:\Users\<user>\.codex\skills\lgk-vector`. Every Codex task then sees the D-drive source, tests, scripts, and documentation through that link. A cloned maintenance repository also has Git history; the downloadable Release ZIP deliberately does not contain `.git` or source code. After that one-time installation, each AUTOSAR project keeps only its own `lgk-vector.json` in the DaVinci Cfg directory and calls the central wrapper:
+The default junction is `C:\Users\<user>\.codex\skills\lgk-autosar`. Every Codex task then sees the D-drive source, tests, scripts, and documentation through that link. A cloned maintenance repository also has Git history; the downloadable Release ZIP deliberately does not contain `.git` or source code. After that one-time installation, each AUTOSAR project keeps only its own `lgk-autosar.json` in the DaVinci Cfg directory and calls the central wrapper:
 
 ```powershell
-& "D:\Tools\LGK-Vector\scripts\Invoke-LGKVector.ps1" `
+& "D:\Tools\LGK-AUTOSAR\scripts\Invoke-LGKAutosar.ps1" `
   -ProjectPath "D:\Work\Vehicle\Cfg" `
   -Request '{"func":"find_module","module":"Com"}'
 ```
 
-The canonical public repository is [qudh666666-web/LGK-Vector](https://github.com/qudh666666-web/LGK-Vector). Public releases use an audited clean-root history: the private development history may contain personal author metadata or superseded product names even when the current tree is clean.
+The canonical public repository is [qudh666666-web/LGK-AUTOSAR](https://github.com/qudh666666-web/LGK-AUTOSAR). Public releases use an audited clean-root history: the private development history may contain personal author metadata or superseded product names even when the current tree is clean.
 
 ## AI-agent compatibility
 
-The source repository uses root `AGENTS.md` and `.agents\skills\lgk-vector\SKILL.md` for maintainers. The Release ZIP uses a simple copyable skill layout: copy its complete `lgk-vector` folder into Codex, OpenCode, or Claude Code's skills directory. Its concise runtime `SKILL.md` and `AGENTS.md` then use the same PowerShell wrapper; no Codex-specific runtime is required.
+The source repository uses root `AGENTS.md` and `.agents\skills\lgk-autosar\SKILL.md` for maintainers. The Release ZIP uses a simple copyable skill layout: copy its complete `lgk-autosar` folder into Codex, OpenCode, or Claude Code's skills directory. Its concise runtime `SKILL.md` and `AGENTS.md` then use the same PowerShell wrapper; no Codex-specific runtime is required.
 
 ## Project configuration
 
-The safest first-time setup is one command. It creates a portable `lgk-vector.json` and immediately runs the non-mutating static doctor:
+The safest first-time setup is one command. It creates a portable `lgk-autosar.json` and immediately runs the non-mutating static doctor:
 
 ```powershell
-& "D:\Tools\LGK-Vector\scripts\Initialize-LGKVectorProject.ps1" `
+& "D:\Tools\LGK-AUTOSAR\scripts\Initialize-LGKAutosarProject.ps1" `
   -ProjectPath "D:\Work\Project\Cfg" `
   -ToolPath "D:\VectorSIP"
 ```
@@ -89,8 +89,8 @@ Doctor verifies JSON, request shape, DPA/ECUC/BSWMD discovery, executable paths,
 Run the executable from that Cfg directory and pass one JSON request:
 
 ```powershell
-lgk-vector.exe --start-host
-lgk-vector.exe '{"func":"find_module","module":"Com"}'
+lgk-autosar.exe --start-host
+lgk-autosar.exe '{"func":"find_module","module":"Com"}'
 ```
 
 The supplied PowerShell wrapper performs the host-start step automatically. Prefer it for automation and AI-tool integration.
@@ -115,7 +115,7 @@ Supported functions are `inspect_ecuc_containers`, `inspect_autosar_model`, `tra
 
 Multi-item request arrays are read-only. Send `set_ecuc_value`, `edit_file`, `auto_solve_errors`, `generate_code`, `update_project`, `import_dbc`, and `shutdown_host` as standalone requests so a later failure cannot leave an earlier mutation half-applied.
 
-Before `set_ecuc_value`, `edit_file`, `update_project`, or `import_dbc`, save and close the same project in the DaVinci GUI. LGK-Vector also closes its own previously opened DaVinci session before a disk edit. `import_dbc` accepts an absolute source DBC and a project-relative `registered_path`; the destination must already be registered in the DPA. It snapshots the Cfg tree, replaces that input, runs DaVinci Project Update, and reports elapsed time and logs. If conversion or update fails, DPA, ARXML, DBC, logs, and newly added project files are rolled back together while failure logs remain outside the project for diagnosis. Since v0.3.8, `generate_code` requires a module (the `module_name` alias remains supported); old callers must pass a concrete affected module or explicit `"module":"all"`. Generation automatically verifies the one fresh report in DPA `Folders/Logs` and returns `passed:true` with a compact summary only when validation and the selected generation phase pass. Missing, stale, ambiguous or unsupported reports fail acceptance without retries. `auto_solve_errors` requires an explicit module plus `confirmed: true`. Always send `shutdown_host` after the final request.
+Before `set_ecuc_value`, `edit_file`, `update_project`, or `import_dbc`, save and close the same project in the DaVinci GUI. LGK-AUTOSAR also closes its own previously opened DaVinci session before a disk edit. `import_dbc` accepts an absolute source DBC and a project-relative `registered_path`; the destination must already be registered in the DPA. It snapshots the Cfg tree, replaces that input, runs DaVinci Project Update, and reports elapsed time and logs. If conversion or update fails, DPA, ARXML, DBC, logs, and newly added project files are rolled back together while failure logs remain outside the project for diagnosis. Since v0.3.8, `generate_code` requires a module (the `module_name` alias remains supported); old callers must pass a concrete affected module or explicit `"module":"all"`. Generation automatically verifies the one fresh report in DPA `Folders/Logs` and returns `passed:true` with a compact summary only when validation and the selected generation phase pass. Missing, stale, ambiguous or unsupported reports fail acceptance without retries. `auto_solve_errors` requires an explicit module plus `confirmed: true`. Always send `shutdown_host` after the final request.
 
 The public suite verifies the synthetic local path and failure handling. A real DaVinci generation still requires a lawful matching DaVinci/SIP installation and a disposable licensed test project; passing the public suite is strong evidence, not a claim that no defect can exist on every proprietary tool version.
 

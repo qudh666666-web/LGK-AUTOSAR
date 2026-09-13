@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory)]
     [string]$DestinationRoot,
@@ -22,13 +22,13 @@ $source = (Resolve-Path -LiteralPath $SourceRoot -ErrorAction Stop).Path
 if (-not (Test-Path -LiteralPath (Join-Path $source 'Cargo.toml') -PathType Leaf) -or
     -not (Test-Path -LiteralPath (Join-Path $source 'SKILL.md') -PathType Leaf) -or
     -not (Test-Path -LiteralPath (Join-Path $source 'src') -PathType Container)) {
-    throw "SourceRoot is not an LGK-Vector source tree: $source"
+    throw "SourceRoot is not an LGK-AUTOSAR source tree: $source"
 }
 
 $destination = [System.IO.Path]::GetFullPath($DestinationRoot)
 $root = [System.IO.Path]::GetPathRoot($destination)
 if ([string]::IsNullOrWhiteSpace($destination) -or $destination -eq $root) {
-    throw "DestinationRoot must be a dedicated LGK-Vector directory"
+    throw "DestinationRoot must be a dedicated LGK-AUTOSAR directory"
 }
 if ([string]::Equals($source.TrimEnd('\'), $destination.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
     throw 'DestinationRoot must not be the source repository'
@@ -50,10 +50,10 @@ $packageFiles = @(
     @{ source = 'LICENSE'; destination = 'LICENSE' }
     @{ source = 'NOTICE'; destination = 'NOTICE' }
     @{ source = 'assets\release-package\README.md'; destination = 'README.md' }
-    @{ source = 'assets\release-package\SKILL.md'; destination = 'lgk-vector\SKILL.md' }
-    @{ source = 'assets\release-package\AGENTS.md'; destination = 'lgk-vector\AGENTS.md' }
-    @{ source = 'scripts\Invoke-LGKVector.ps1'; destination = 'lgk-vector\Invoke-LGKVector.ps1' }
-    @{ source = 'scripts\Initialize-LGKVectorProject.ps1'; destination = 'lgk-vector\Initialize-LGKVectorProject.ps1' }
+    @{ source = 'assets\release-package\SKILL.md'; destination = 'lgk-autosar\SKILL.md' }
+    @{ source = 'assets\release-package\AGENTS.md'; destination = 'lgk-autosar\AGENTS.md' }
+    @{ source = 'scripts\Invoke-LGKAutosar.ps1'; destination = 'lgk-autosar\Invoke-LGKAutosar.ps1' }
+    @{ source = 'scripts\Initialize-LGKAutosarProject.ps1'; destination = 'lgk-autosar\Initialize-LGKAutosarProject.ps1' }
 )
 $releaseTestPrefix = 'tests/release/'
 
@@ -127,29 +127,29 @@ foreach ($relative in @($manifest | Where-Object { $_.Replace('\', '/').StartsWi
 
 if ($IncludeBinaries) {
     $release = Join-Path $source 'target\release'
-    foreach ($name in @('lgk-vector.exe', 'lgk-vector-host.exe')) {
+    foreach ($name in @('lgk-autosar.exe', 'lgk-autosar-host.exe')) {
         $binary = Join-Path $release $name
         if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
             throw "Release binary is missing; run cargo build --release --locked first: $binary"
         }
-        Copy-Item -LiteralPath $binary -Destination (Join-Path $destination (Join-Path 'lgk-vector' $name)) -Force
+        Copy-Item -LiteralPath $binary -Destination (Join-Path $destination (Join-Path 'lgk-autosar' $name)) -Force
     }
-    $runtime = Join-Path $destination 'lgk-vector'
-    $cliBinary = Join-Path $runtime 'lgk-vector.exe'
-    $hostBinary = Join-Path $runtime 'lgk-vector-host.exe'
+    $runtime = Join-Path $destination 'lgk-autosar'
+    $cliBinary = Join-Path $runtime 'lgk-autosar.exe'
+    $hostBinary = Join-Path $runtime 'lgk-autosar-host.exe'
     $pairManifest = [ordered]@{
         version = (& $cliBinary --version | Out-String).Trim()
         cli_sha256 = (Get-FileHash -LiteralPath $cliBinary -Algorithm SHA256).Hash
         host_sha256 = (Get-FileHash -LiteralPath $hostBinary -Algorithm SHA256).Hash
     } | ConvertTo-Json
     [System.IO.File]::WriteAllText(
-        (Join-Path $runtime 'lgk-vector-pair.json'),
+        (Join-Path $runtime 'lgk-autosar-pair.json'),
         $pairManifest,
         [System.Text.UTF8Encoding]::new($false)
     )
 }
 
-$allowedExecutables = @('lgk-vector/lgk-vector.exe', 'lgk-vector/lgk-vector-host.exe')
+$allowedExecutables = @('lgk-autosar/lgk-autosar.exe', 'lgk-autosar/lgk-autosar-host.exe')
 $forbiddenExtensions = @(
     '.dll', '.log', '.tmp', '.user', '.dpa', '.arxml', '.dbc', '.a2l',
     '.lic', '.license', '.pem', '.key', '.pfx', '.hex', '.elf', '.map',
@@ -159,7 +159,7 @@ $packageLeaks = @(Get-ChildItem -LiteralPath $destination -Recurse -Force -File 
     $relative = $_.FullName.Substring($destination.TrimEnd('\').Length).TrimStart('\').Replace('\', '/')
     ($_.Extension -ieq '.exe' -and $allowedExecutables -notcontains $relative) -or
     ($forbiddenExtensions -contains $_.Extension.ToLowerInvariant()) -or
-    $_.Name -ieq 'lgk-vector.json' -or
+    $_.Name -ieq 'lgk-autosar.json' -or
     $_.Name -ieq 'host.token' -or
     $_.Name -like '.env*'
 })

@@ -22,11 +22,11 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding = $utf8NoBom
 
 $package = (Resolve-Path -LiteralPath $PackageRoot -ErrorAction Stop).Path
-$runtime = Join-Path $package 'lgk-vector'
-$wrapper = Join-Path $runtime 'Invoke-LGKVector.ps1'
-$cli = Join-Path $runtime 'lgk-vector.exe'
-$hostExecutable = Join-Path $runtime 'lgk-vector-host.exe'
-$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('lgk-vector-exe-selftest-中文 空格-' + [Guid]::NewGuid().ToString('N'))
+$runtime = Join-Path $package 'lgk-autosar'
+$wrapper = Join-Path $runtime 'Invoke-LGKAutosar.ps1'
+$cli = Join-Path $runtime 'lgk-autosar.exe'
+$hostExecutable = Join-Path $runtime 'lgk-autosar-host.exe'
+$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('lgk-autosar-exe-selftest-中文 空格-' + [Guid]::NewGuid().ToString('N'))
 $project = Join-Path $temporaryRoot 'Cfg'
 $tool = Join-Path $temporaryRoot 'SIP'
 $hostStarted = $false
@@ -64,7 +64,7 @@ try {
         Assert-True (Test-Path -LiteralPath $path -PathType Leaf) "发布包缺少必要文件：$path"
     }
     if ((Test-Port 32483) -or (Test-Port 32484)) {
-        throw '检测到 LGK-Vector Host 已在运行。请先在另一任务中调用 shutdown_host 正常关闭，再重新运行自检。'
+        throw '检测到 LGK-AUTOSAR Host 已在运行。请先在另一任务中调用 shutdown_host 正常关闭，再重新运行自检。'
     }
 
     New-Item -ItemType Directory -Path $project, $tool -Force | Out-Null
@@ -110,7 +110,7 @@ try {
 </ELEMENTS></AR-PACKAGE></AR-PACKAGES></AUTOSAR>
 '@
     Write-Utf8 -Path (Join-Path $tool 'DaVinciConfigurator\Core\DVCfgCmd.exe') -Content ''
-    Write-Utf8 -Path (Join-Path $project 'lgk-vector.json') -Content (([ordered]@{
+    Write-Utf8 -Path (Join-Path $project 'lgk-autosar.json') -Content (([ordered]@{
         tool_path = $tool
         project_file = 'SelfTest.dpa'
         davinci_command_path = 'DaVinciConfigurator\Core\DVCfgCmd.exe'
@@ -118,8 +118,8 @@ try {
 
     $cliIdentity = (& $cli --version | Out-String).Trim()
     $hostIdentity = (& $hostExecutable --version | Out-String).Trim()
-    $cliComparableIdentity = $cliIdentity -replace '^lgk-vector ', ''
-    $hostComparableIdentity = $hostIdentity -replace '^lgk-vector-host ', ''
+    $cliComparableIdentity = $cliIdentity -replace '^lgk-autosar ', ''
+    $hostComparableIdentity = $hostIdentity -replace '^lgk-autosar-host ', ''
     Assert-True ([string]::Equals($cliComparableIdentity, $hostComparableIdentity, [StringComparison]::Ordinal)) 'CLI 与 Host 的版本标识不一致'
 
     $hostStarted = $true
@@ -182,7 +182,7 @@ try {
     $tempBase = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
     $resolvedTemporary = [IO.Path]::GetFullPath($temporaryRoot)
     if ($resolvedTemporary.StartsWith($tempBase, [StringComparison]::OrdinalIgnoreCase) -and
-        (Split-Path -Leaf $resolvedTemporary).StartsWith('lgk-vector-exe-selftest-')) {
+        (Split-Path -Leaf $resolvedTemporary).StartsWith('lgk-autosar-exe-selftest-')) {
         if (Test-Path -LiteralPath $resolvedTemporary) {
             Set-Location -LiteralPath $package
             Remove-Item -LiteralPath $resolvedTemporary -Recurse -Force

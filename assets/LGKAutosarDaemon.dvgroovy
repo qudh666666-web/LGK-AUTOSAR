@@ -9,9 +9,9 @@ import java.net.ServerSocket
  * This script is written for this project and requires a licensed DaVinci installation.
  */
 daVinci {
-    scriptDescription "LGK-Vector DaVinci adapter"
+    scriptDescription "LGK-AUTOSAR DaVinci adapter"
 
-    scriptTask("LGKVectorDaemon", DV_PROJECT) {
+    scriptTask("LGKAutosarDaemon", DV_PROJECT) {
         taskDescription "Local requests for validation, generation, and normal shutdown"
 
         code {
@@ -131,7 +131,7 @@ daVinci {
 
             // 使用随机本机端口，避免和其他 Bridge/DaVinci 会话争用固定端口。
             def server = new ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
-            println "LGK_VECTOR_READY:${server.localPort}"
+            println "LGK_AUTOSAR_READY:${server.localPort}"
             while (true) {
                 def socket = server.accept()
                 try {

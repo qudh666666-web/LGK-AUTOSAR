@@ -269,7 +269,7 @@ fn run_project_update(config: &SessionConfig) -> Result<Value> {
     // Failure logs live outside the project so a full project rollback cannot
     // erase the evidence. Successful logs are copied into Cfg\Log below.
     let runtime_dir = std::env::temp_dir().join(format!(
-        "lgk-vector-project-update-{}-{stamp}",
+        "lgk-autosar-project-update-{}-{stamp}",
         std::process::id()
     ));
     fs::create_dir(&runtime_dir)
@@ -343,8 +343,8 @@ fn run_project_update(config: &SessionConfig) -> Result<Value> {
             project_log_dir.display()
         )
     })?;
-    let saved_log = project_log_dir.join(format!("LGKVectorProjectUpdate-{stamp}.log"));
-    let saved_console = project_log_dir.join(format!("LGKVectorProjectUpdate-{stamp}.console.log"));
+    let saved_log = project_log_dir.join(format!("LGKAutosarProjectUpdate-{stamp}.log"));
+    let saved_console = project_log_dir.join(format!("LGKAutosarProjectUpdate-{stamp}.console.log"));
     fs::copy(&log_path, &saved_log)
         .with_context(|| format!("save Project Update log: {}", saved_log.display()))?;
     fs::copy(&console_path, &saved_console).with_context(|| {
@@ -494,7 +494,7 @@ mod tests {
         let dvcfg = tool.join("DVCfgCmd.exe");
         fs::write(&dvcfg, []).expect("dvcfg");
         fs::write(
-            project.join("lgk-vector.json"),
+            project.join("lgk-autosar.json"),
             serde_json::to_vec(&json!({
                 "tool_path": tool,
                 "project_file": "Demo.dpa",

@@ -1,4 +1,4 @@
-﻿# LGK-Vector 源码维护者的唯一构建入口。
+# LGK-AUTOSAR 源码维护者的唯一构建入口。
 # 它只修改当前 PowerShell 进程的环境变量，输出只落在 target\release，
 # 不安装或修改系统 Rust、MSYS2、DaVinci、SIP 和 AUTOSAR 工程。
 [CmdletBinding()]
@@ -58,12 +58,12 @@ try {
     & $cargoExecutable @arguments
     if ($LASTEXITCODE -ne 0) {
         $networkHint = if ($AllowNetwork) { '' } else { '；若明确允许下载缺失 Rust 依赖，可重新运行并加 -AllowNetwork' }
-        throw "LGK-Vector Release 构建失败，退出码：$LASTEXITCODE$networkHint"
+        throw "LGK-AUTOSAR Release 构建失败，退出码：$LASTEXITCODE$networkHint"
     }
 
     $release = Join-Path $sourceRoot 'target\release'
-    $cli = Join-Path $release 'lgk-vector.exe'
-    $hostBinary = Join-Path $release 'lgk-vector-host.exe'
+    $cli = Join-Path $release 'lgk-autosar.exe'
+    $hostBinary = Join-Path $release 'lgk-autosar-host.exe'
     foreach ($binary in @($cli, $hostBinary)) {
         if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
             throw "构建结束但缺少预期 EXE：$binary"
