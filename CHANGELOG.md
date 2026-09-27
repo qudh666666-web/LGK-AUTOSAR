@@ -8,6 +8,7 @@
 - Added standalone `set_ecuc_values` for up to 32 existing ECUC values: preview, full preflight, original-byte recheck, and best-effort rollback on later write failure. Cross-file writes are not crash-atomic.
 - Verified generation now returns content-changed GenData files and, with optional `delivery`, which changed files need synchronization. This is advisory; `verify_delivery` remains the exact-byte handoff gate.
 - Synthetic Rust tests cover report details, grouped preflight/preview/rollback and generated-file diff. Local verification: 64 Rust tests passed (one optional test ignored), 62 onboarding checks, 13 package checks, dependency-license and public-content guards passed. Both release EXEs report 0.4.2. Existing project-private rustfmt and Clippy binaries were found and used; two pre-existing formatting deviations were corrected for CI. Windows CI exposed short-path fixture mismatches, corrected by canonicalizing synthetic test paths. No system components were installed, and no customer ECUC or generated file was changed.
+- Public history guard now inspects ancestors of the published HEAD, not every fetched sibling branch; a clean-root branch can pass CI with `fetch-depth: 0` while an old branch containing private history still fails its own check.
 
 ## 2026-09-26 DaVinci startup budget
 

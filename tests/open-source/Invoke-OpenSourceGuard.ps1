@@ -61,9 +61,11 @@ try {
     }
 
     if ($IncludeHistory) {
-        $authorEmails = @(& git log --all --format='%ae')
+        # CI fetches sibling branches too; only ancestors of the tree being
+        # published can be transferred by a normal push of HEAD.
+        $authorEmails = @(& git log HEAD --format='%ae')
         $privateAuthors = @($authorEmails | Where-Object { [string]$_ -match '@qq\.com$' } | Select-Object -Unique)
-        $oldBrandCommits = @(& git log --all --format='%H' -S $oldBrand --)
+        $oldBrandCommits = @(& git log HEAD --format='%H' -S $oldBrand --)
         if ($privateAuthors.Count -ne 0 -or $oldBrandCommits.Count -ne 0) {
             throw "Public-history guard failed: personal QQ author emails=$($privateAuthors.Count), old-brand commits=$($oldBrandCommits.Count). Publish an audited clean-root branch instead of the private development history."
         }
