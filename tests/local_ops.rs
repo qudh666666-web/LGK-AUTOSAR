@@ -1173,10 +1173,13 @@ fn supports_non_microsar_definitions_and_explicit_tool_selection() {
     .expect("bridge config");
 
     let config = SessionConfig::load(&project).expect("load generic session");
-    assert_eq!(config.dpa_file().expect("selected dpa"), project_file);
     assert_eq!(
-        config.davinci_command_path.as_deref(),
-        Some(command.as_path())
+        fs::canonicalize(config.dpa_file().expect("selected dpa")).unwrap(),
+        fs::canonicalize(project_file).unwrap()
+    );
+    assert_eq!(
+        fs::canonicalize(config.davinci_command_path.as_deref().unwrap()).unwrap(),
+        fs::canonicalize(command).unwrap()
     );
 
     let module = ops::find_module::execute(&config, &json!({"module": "Nm"})).expect("find module");
