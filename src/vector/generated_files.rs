@@ -243,8 +243,9 @@ mod tests {
     #[test]
     fn content_changes_and_delivery_status_are_reported() {
         let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("GenData");
-        let target = root.path().join("Delivery");
+        let root_path = normalize_canonical_path(root.path().canonicalize().unwrap());
+        let source = root_path.join("GenData");
+        let target = root_path.join("Delivery");
         fs::create_dir(&source).unwrap();
         fs::create_dir(&target).unwrap();
         fs::write(source.join("Com.c"), b"old").unwrap();
@@ -253,7 +254,7 @@ mod tests {
             before: inventory(&source).unwrap(),
             directory: source.clone(),
             delivery: Some(Delivery {
-                root: root.path().to_path_buf(),
+                root: root_path,
                 directory: target,
             }),
         };
