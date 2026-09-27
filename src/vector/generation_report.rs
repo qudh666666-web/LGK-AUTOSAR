@@ -176,9 +176,7 @@ fn parse_report(html: &str, definition_ref: Option<&str>) -> Result<usize> {
 fn validation_error_details(body: &str) -> Result<Option<String>> {
     let end = body.find("Generation Results").unwrap_or(body.len());
     let section = &body[..end];
-    let spans = Regex::new(
-        r#"(?is)<span\b[^>]*class=['"]([^'"]*)['"][^>]*>([^<]*)</span>"#,
-    )?;
+    let spans = Regex::new(r#"(?is)<span\b[^>]*class=['"]([^'"]*)['"][^>]*>([^<]*)</span>"#)?;
     let code = Regex::new(r"(?i)^[A-Z][A-Z0-9_]{1,15}\d{3,6}\b")?;
     let mut issues: Vec<(String, Vec<String>)> = Vec::new();
     let mut fallback = Vec::new();

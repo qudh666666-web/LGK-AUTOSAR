@@ -344,7 +344,8 @@ fn run_project_update(config: &SessionConfig) -> Result<Value> {
         )
     })?;
     let saved_log = project_log_dir.join(format!("LGKAutosarProjectUpdate-{stamp}.log"));
-    let saved_console = project_log_dir.join(format!("LGKAutosarProjectUpdate-{stamp}.console.log"));
+    let saved_console =
+        project_log_dir.join(format!("LGKAutosarProjectUpdate-{stamp}.console.log"));
     fs::copy(&log_path, &saved_log)
         .with_context(|| format!("save Project Update log: {}", saved_log.display()))?;
     fs::copy(&console_path, &saved_console).with_context(|| {

@@ -730,7 +730,9 @@ fn grouped_semantic_edits_preview_and_preflight_before_writing() {
     let preview = json!({"func":"set_ecuc_values", "preview":true,
         "edits":[first.clone(), second.clone()]});
     CommandDispatcher::validate_batch(&config, &preview.to_string()).unwrap();
-    let result = CommandDispatcher::new().dispatch_batch(&config, &preview.to_string()).unwrap();
+    let result = CommandDispatcher::new()
+        .dispatch_batch(&config, &preview.to_string())
+        .unwrap();
     assert_eq!(result["changed_files"], 1);
     assert_eq!(result["edits"].as_array().unwrap().len(), 2);
     assert_eq!(fs::read_to_string(&file).unwrap(), with_reference);
@@ -738,16 +740,24 @@ fn grouped_semantic_edits_preview_and_preflight_before_writing() {
     let stale = json!({"func":"set_ecuc_values", "edits":[first.clone(),
         {"module":"Com", "container_path":"ComConfig/SignalA",
          "reference":"ComTargetRef", "expected":"/Target/Wrong", "value":"/Target/Two"}]});
-    assert!(CommandDispatcher::new().dispatch_batch(&config, &stale.to_string()).is_err());
+    assert!(CommandDispatcher::new()
+        .dispatch_batch(&config, &stale.to_string())
+        .is_err());
     assert_eq!(fs::read_to_string(&file).unwrap(), with_reference);
 
     let group = json!({"func":"set_ecuc_values", "edits":[first, second]});
-    CommandDispatcher::new().dispatch_batch(&config, &group.to_string()).unwrap();
+    CommandDispatcher::new()
+        .dispatch_batch(&config, &group.to_string())
+        .unwrap();
     let edited = fs::read_to_string(&file).unwrap();
     assert!(edited.contains("<VALUE>16</VALUE>"));
     assert!(edited.contains(">/Target/Two</VALUE-REF>"));
-    assert!(CommandDispatcher::new().dispatch_batch(&config,
-        &json!([group, {"func":"find_module", "module":"Com"}]).to_string()).is_err());
+    assert!(CommandDispatcher::new()
+        .dispatch_batch(
+            &config,
+            &json!([group, {"func":"find_module", "module":"Com"}]).to_string()
+        )
+        .is_err());
 }
 
 #[test]

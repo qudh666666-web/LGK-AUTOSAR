@@ -107,7 +107,10 @@ pub fn validate_group(config: &SessionConfig, request: &Value) -> Result<()> {
 pub fn execute_group(config: &SessionConfig, request: &Value) -> Result<Value> {
     let (files, edits) = prepare_group(config, request)?;
     let preview = request.get("preview").and_then(Value::as_bool) == Some(true);
-    let changed_files = files.iter().filter(|file| file.original != file.updated).count();
+    let changed_files = files
+        .iter()
+        .filter(|file| file.original != file.updated)
+        .count();
     if !preview {
         commit_group(&files)?;
     }
@@ -145,7 +148,10 @@ fn prepare(config: &SessionConfig, request: &Value) -> Result<PreparedEdit> {
 }
 
 fn prepare_group(config: &SessionConfig, request: &Value) -> Result<(Vec<FileEdit>, Vec<Value>)> {
-    if request.get("preview").is_some_and(|value| !value.is_boolean()) {
+    if request
+        .get("preview")
+        .is_some_and(|value| !value.is_boolean())
+    {
         bail!("preview must be a boolean");
     }
     let items = request

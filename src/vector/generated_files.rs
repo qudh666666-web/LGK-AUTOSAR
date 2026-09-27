@@ -51,7 +51,11 @@ impl GeneratedSnapshot {
 
     pub fn diff(&self) -> Result<Value> {
         let after = inventory(&self.directory)?;
-        let paths = self.before.keys().chain(after.keys()).collect::<BTreeSet<_>>();
+        let paths = self
+            .before
+            .keys()
+            .chain(after.keys())
+            .collect::<BTreeSet<_>>();
         let mut changed_count = 0usize;
         let mut needs_sync_count = 0usize;
         let mut files = Vec::new();
@@ -175,7 +179,10 @@ fn ensure_destination(root: &Path, target: &Path) -> Result<()> {
     }
     let canonical = normalize_canonical_path(existing.canonicalize()?);
     if !canonical.starts_with(root) {
-        bail!("delivery target resolves outside delivery.root: {}", target.display());
+        bail!(
+            "delivery target resolves outside delivery.root: {}",
+            target.display()
+        );
     }
     Ok(())
 }
