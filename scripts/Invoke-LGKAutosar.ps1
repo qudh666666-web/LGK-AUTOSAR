@@ -208,7 +208,11 @@ try {
     $allowedFunctions = @(
         'inspect_ecuc_containers',
         'inspect_autosar_model',
+        'audit_autosar_model',
+        'inspect_autosar_mapping',
         'trace_autosar_model',
+        'set_asw_reference',
+        'write_asw_bundle',
         'diff_ecuc',
         'set_ecuc_value',
         'set_ecuc_values',
@@ -241,7 +245,7 @@ try {
         }
     }
     $mutatingFunctions = @(
-        'set_ecuc_value', 'set_ecuc_values', 'edit_file', 'auto_solve_errors', 'generate_code',
+        'write_asw_bundle', 'set_asw_reference', 'set_ecuc_value', 'set_ecuc_values', 'edit_file', 'auto_solve_errors', 'generate_code',
         'update_project', 'import_dbc', 'shutdown_host'
     )
     if ($requestObject -is [System.Array] -and $requestObject.Count -gt 1) {

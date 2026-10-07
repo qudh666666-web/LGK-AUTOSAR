@@ -19,15 +19,22 @@ run PowerShell.
 ## Safe ECUC workflow
 
 - Inspect first: use `find_module`, `inspect_ecuc_containers`, `inspect_autosar_model`,
-  `trace_autosar_model`, `diff_ecuc`,
+  `audit_autosar_model`, `inspect_autosar_mapping`, `trace_autosar_model`, `diff_ecuc`,
   `find_module_template`, and `get_param_definition` before proposing a change.
 - For DaVinci configuration, use LGK-AUTOSAR requests rather than manually
   editing ARXML. Use `set_ecuc_value` for an existing parameter/reference and
   `edit_file` only for a scoped structural text change with exact expected text.
-- Before `set_ecuc_value`, `edit_file`, `import_dbc`, or `update_project`, save and close the
+- For ASW-side links, inspect and trace before `set_asw_reference`, supplying
+  the exact saved target in Developer or a registered application input.
+  `write_asw_bundle` creates/updates/deletes a dedicated typed ASW file in a
+  project-contained DPA application input folder. Preview first; use null
+  expected only for creation, complete saved file content for update/delete.
+  Never overwrite foreign ASW files or bypass external-dependency rejection.
+  Re-query and validate in DaVinci; see `docs/ASW写入与验收.md` for tested scope.
+- Before `write_asw_bundle`, `set_asw_reference`, `set_ecuc_value`, `edit_file`, `import_dbc`, or `update_project`, save and close the
   same project in the DaVinci GUI. Do not make a disk edit while its unsaved GUI
   model can overwrite it.
-- Send mutations (`set_ecuc_value`, `edit_file`, `import_dbc`, `update_project`,
+- Send mutations (`write_asw_bundle`, `set_asw_reference`, `set_ecuc_value`, `set_ecuc_values`, `edit_file`, `import_dbc`, `update_project`,
   `auto_solve_errors`, `generate_code`) one at a time. Validate errors and
   generate only the affected module unless an explicit all-module generation
   is intended.

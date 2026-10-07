@@ -2,6 +2,21 @@
 
 版本号说明发布顺序，Git 提交号用于定位准确源码。每次功能、接口、包装器或 Skill 改动，都必须在顶部新增记录。
 
+## 2026-10-07 - 本地待发布
+
+- 新增正式 `write_asw_bundle`：在工程内 DPA 已登记的应用输入目录，创建/更新/删除专用 typed ASW 文件，支持四种 Implementation Type、SR/CS Interface、Application SWC、P/R Port、Runnable/Timing Event/数据访问及 Composition 的 Assembly/Delegation。完整旧字节、预览、无覆盖创建、引用/DEST/类型环/连接兼容性检查；阻止外部引用对象被删改，工程外或不可访问的应用输入使写入拒绝。查询与已有 ASW 引用修改覆盖工程内登记输入。写入保存的 ARXML，并非原生内存创建；跨请求撤销尚未实现。维护者隔离样本在真实 DaVinci 5 中完成三阶段重载/导出/保存：创建和更新各确认 15 个关键对象及类型，周期由 0.01 改为 0.02 秒，删除后包消失；每阶段约 18 秒，ERROR 计数均 254，506 个源文件和原 INI 不变。未验收 RTE 生成、Data–Signal/RTE–OS 映射或完整 ASW 类型。离线指定脚本重建双 EXE 均报 0.4.2；80 项 Rust 通过、1 项忽略，83 项 onboarding、17 项包检查及格式/Clippy/许可证/当前内容守卫通过。公开测试为合成测试，许可验收材料在仓库外；详见 `docs/ASW写入与验收.md`。
+
+- 新增维护者专用 DaVinci 5 单 Boolean 原生实验（不进入运行时/发布包）：仅在新的非客户副本中核对旧值，事务修改、模型重查、保存并恢复，记录校验计数及复制文件变化。首次加载因内存保护中止；查明原启动配置 Xmx 为 16 GiB，改用独立 1 GiB 配置后通过，未修改 SIP INI 或放宽保护。最终真实实验约 19 秒，目标文件原字节恢复，254 个既有 ERROR 的计数前/写后/恢复后相同；506 个源文件保持不变，但副本 DPA/Os 文件出现加载/保存副作用，不能称整工程撤销成功。默认写入路径不变。新增 PrepareOnly 隔离/路径/堆参数合成检查及实验脚本包排除检查；离线重建双 EXE 均报 0.4.2，74 项 Rust 测试通过、1 项忽略，75 项 onboarding、15 项包检查及格式/Clippy/许可证/当前内容守卫通过。原生接口依据与撤销协议见 `docs/原生写入实验与安全撤销设计.md`；持久记录、旧/新值与整文件哈希复核、外部修改拒绝和中断恢复仍是设计，跨请求撤销 API 尚未实现。
+
+- 新增只读 `inspect_autosar_mapping`：保存的 assembly/delegation、Data 到 Signal/Group、SWC/BSW event-to-task 条目汇总与定向分页；默认 8 条/最大 32 条/64 KiB，支持类别、路径、待核查项和纯汇总。保留匿名条目的 XML 位置、引用分组位置及组件实例上下文；缺 task-ref 和范围外引用不当成 DaVinci 错误。修复引用遍历误把 delegation 的结构性 `*-REF` 包装器当叶子的漏查，新增反例测试。指定脚本离线重建，CLI/Host 均报 0.4.2；74 项 Rust 测试通过、1 项忽略，65 项 onboarding、13 项包检查及格式/Clippy/许可证/当前内容守卫通过。实际工程只读核对 68 条 Port、18 条 Data、136 条任务映射（119 SWC/17 BSW），91 条缺 task-ref；汇总约 0.8 KiB，87 个配置文件哈希及客户 Git 状态未变化。没有运行 DaVinci，不声称完整连接覆盖、周期/优先级校验或写入验收。
+
+- `inspect_ecuc_containers` 增加默认 32 项/最大 256 项和 64 KiB 响应预算。小结果保留数组；超过匹配上限的旧请求返回 `INSPECTION_PAGE_REQUIRED`，使用 `paged:true` 返回总数、分页结果、完整性与后续 offset。拒绝非法分页参数及超大值输出，不静默丢失条目/截断值；新增合成分页、末页、非法输入、超大字段及包装器检查。指定脚本离线重建成功，双 EXE 均报 0.4.2；70 项 Rust 测试通过、1 项可选检查忽略，63 项 onboarding、13 项包检查及格式/Clippy/许可证/当前公开内容守卫通过。未运行真实 DaVinci，未修改客户工程。
+
+- 基于 AutoC 0.10.0 安装包与公开说明的差距审查，新增只读 `audit_autosar_model`：在现有有界 System/Developer 索引上统计 `*-REF` / `*-TREF` 的 `unresolved_in_scope`，按角色汇总，默认仅回传 8 个例子（最多 32 个）。可按源对象类型/路径缩小结果；不把扫描范围外引用误报为已证实的模型错误。审查结论见 `docs/AutoC-0.10.0-能力差距审查.md`。指定脚本离线重建成功，双 EXE 均报 0.4.2；68 项 Rust 测试通过、1 项可选检查忽略，62 项 onboarding、13 项包检查和格式/Clippy/许可证/公开内容守卫通过；没有运行 AutoC 或客户 DaVinci 工程。
+- ASW 引用追踪现识别 AUTOSAR `*-TREF`，可沿 Port → Interface → Data Type 等已有关系定向排查。新增独立请求 `set_asw_reference`：只允许修改当前工程 `Config/Developer` 下已有对象的一个 `*-REF` / `*-TREF`，要求准确旧目标、唯一对象/角色、新目标存在且匹配 `DEST`，支持预览并通过原文件复核与原子替换提交。缺失目标、类型不符、越界文件和批量写入均拒绝。该功能不创建 SWC/Port/Type/Mapping，也不替代 DaVinci 校验。指定脚本离线重建后双 EXE 均为 0.4.2；67 项 Rust 测试通过、1 项可选检查忽略，62 项 onboarding、13 项包检查及格式/Clippy/许可证/公开内容守卫通过。
+- `inspect_autosar_model` 新增 `summary_only:true`：本地扫描 System/Developer ARXML，按已有过滤条件返回对象总数和最多 64 种 AUTOSAR 元素的计数，不返回逐条对象或引用。适用于大型 DBC 导入后的低 token 初筛；不表示新旧 DBC 差异或映射正确性。
+- 新增 10,000 个合成信号的有界输出测试：单次汇总 JSON 小于 1 KiB。指定脚本离线构建成功，CLI/Host 均为 0.4.2；65 项 Rust 测试通过、1 项可选检查忽略，62 项 onboarding、13 项包清单检查通过；格式、Clippy `-D warnings`、公开内容与依赖许可证检查通过。不启动真实 DaVinci、不修改客户工程，真实 DBC 导入未在本轮重跑。
+
 ## v0.4.2 - 2026-09-27
 
 - Generation Report validation failures now include bounded error codes, messages and affected paths when available, instead of only totals.

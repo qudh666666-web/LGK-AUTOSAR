@@ -1,0 +1,109 @@
+import static com.vector.cfg.automation.api.ScriptApi.*
+import com.vector.cfg.gen.core.bswmdmodel.GIBoolParameter
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+
+// Independently written DaVinci 5 experiment. Not part of the resident daemon
+// or release package. The driver creates a new disposable project first.
+daVinci {
+    scriptDescription "LGK isolated native Boolean write/readback/restore probe"
+    scriptTask("LGKNativeBooleanProbe", DV_PROJECT) {
+        code {
+            def active = projects.activeProject
+            File dpa = active.dpaProjectFilePath.toFile().canonicalFile
+            File manifestFile = new File(dpa.parentFile, "lgk-native-probe.json")
+            if (!manifestFile.isFile()) throw new IllegalStateException("Disposable manifest missing")
+            def request = new JsonSlurper().parse(manifestFile, "UTF-8")
+            if (request.schema != 1 || request.disposable != true || request.phase != "prepared" ||
+                dpa.path != new File(request.project_file.toString()).canonicalPath ||
+                dpa.parentFile.path != new File(request.disposable_root.toString()).canonicalPath ||
+                !(request.expected instanceof Boolean) || !(request.value instanceof Boolean) ||
+                request.expected == request.value) {
+                throw new IllegalArgumentException("Invalid disposable native probe manifest")
+            }
+            // Consume the manifest before a transaction; a repeat invocation
+            // must prepare a fresh copy, even if this attempt later fails.
+            request.phase = "started"
+            manifestFile.setText(JsonOutput.toJson(request), "UTF-8")
+            File ecuc = new File(request.ecuc_file.toString()).canonicalFile
+            if (!ecuc.path.startsWith(dpa.parentFile.path + File.separator)) {
+                throw new IllegalArgumentException("ECUC file is outside disposable project")
+            }
+            def digest = { File file ->
+                MessageDigest.getInstance("SHA-256").digest(file.bytes).encodeHex().toString()
+            }
+            def savedValue = {
+                def factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+                factory.setNamespaceAware(true)
+                factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+                def doc = factory.newDocumentBuilder().parse(ecuc)
+                def values = doc.getElementsByTagNameNS("*", "ECUC-NUMERICAL-PARAM-VALUE")
+                def matched = []
+                for (int i = 0; i < values.length; i++) {
+                    def children = values.item(i).childNodes
+                    String definition = null
+                    String value = null
+                    for (int j = 0; j < children.length; j++) {
+                        def child = children.item(j)
+                        if (child.localName == "DEFINITION-REF") definition = child.textContent.trim()
+                        if (child.localName == "VALUE") value = child.textContent.trim()
+                    }
+                    if (definition == request.definition_ref) matched.add(value)
+                }
+                if (matched.size() != 1 || !(matched[0] in ["true", "false"])) {
+                    throw new IllegalStateException("Saved Boolean target is not unique or readable")
+                }
+                matched[0] == "true"
+            }
+            def findLeaf = {
+                def found = bswmdModel(GIBoolParameter.class, request.definition_ref.toString())
+                if (found.size() != 1) throw new IllegalStateException("Boolean target is not unique")
+                found[0]
+            }
+            def errorCount = {
+                validation { validationResults.count { it.severity.toString().equalsIgnoreCase("ERROR") } }
+            }
+            Boolean old = findLeaf().getValue()
+            if (old != request.expected) throw new IllegalStateException("Native expected value mismatch")
+            def beforeHash = digest(ecuc)
+            def beforeErrors = errorCount()
+            def observed = null
+            def writtenHash = null
+            def afterErrors = null
+            boolean savedWritten = false
+            boolean attempted = false
+            boolean restored = false
+            try {
+                attempted = true
+                transaction { findLeaf().setValue(request.value.booleanValue()) }
+                observed = findLeaf().getValue()
+                if (observed != request.value) throw new IllegalStateException("Native write readback mismatch")
+                active.saveProject()
+                savedWritten = savedValue() == request.value
+                if (!savedWritten) throw new IllegalStateException("Saved new Boolean does not match")
+                writtenHash = digest(ecuc)
+                afterErrors = errorCount()
+            } finally {
+                if (attempted) {
+                    transaction { findLeaf().setValue(old.booleanValue()) }
+                    restored = findLeaf().getValue() == old
+                    if (!restored) throw new IllegalStateException("Native restore readback mismatch")
+                    active.saveProject()
+                    if (savedValue() != old) throw new IllegalStateException("Saved restored Boolean does not match")
+                }
+            }
+            request.phase = "completed"
+            manifestFile.setText(JsonOutput.toJson(request), "UTF-8")
+            println "LGK_NATIVE_PROBE_JSON:" + JsonOutput.toJson([
+                native_written: observed == request.value, native_restored: restored,
+                saved_written: savedWritten, saved_restored: savedValue() == old,
+                old: old, new: observed, final_value: findLeaf().getValue(),
+                errors_before: beforeErrors, errors_after: afterErrors,
+                errors_restored: errorCount(),
+                ecuc_hash_before: beforeHash, ecuc_hash_written: writtenHash,
+                ecuc_hash_restored: digest(ecuc), generation_executed: false
+            ])
+        }
+    }
+}

@@ -53,7 +53,7 @@ pending or failed, state it rather than advancing the issue as complete.
 2. Use `find_module`, `get_param_definition`, `locate_container`, or
    `inspect_ecuc_containers` to establish the actual module, definition, and
    configured container.
-3. Before `set_ecuc_value` or `edit_file`, save and close the same project in DaVinci GUI; an open
+3. Before `write_asw_bundle`, `set_asw_reference`, `set_ecuc_value` or `edit_file`, save and close the same project in DaVinci GUI; an open
    GUI may later overwrite external ARXML changes from its in-memory model.
    Use `set_ecuc_value` for one existing parameter/reference: name the real
    module, container instance path, exact saved `expected`, and new `value`.
@@ -291,13 +291,13 @@ Avoid these previously observed mistakes:
   generated output only after a targeted generator attempt.
 - Do not mix `inspect_ecuc_containers` with DaVinci-backed functions in one
   batch. Keep read-only batches separate.
-- Multi-item arrays are read-only. Send `set_ecuc_value`, `set_ecuc_values`, `edit_file`, `auto_solve_errors`,
+- Multi-item arrays are read-only. Send `write_asw_bundle`, `set_asw_reference`, `set_ecuc_value`, `set_ecuc_values`, `edit_file`, `auto_solve_errors`,
   `generate_code`, `update_project`, `import_dbc`, and `shutdown_host` as standalone requests so a batch can
   never leave a partially applied mutation or generation.
 - Keep the central tool at `D:\Tools\LGK-AUTOSAR`; remove project-local legacy
   bridge configs, scripts, and binaries instead of maintaining two tools.
 
-Supported functions are `inspect_ecuc_containers`, `inspect_autosar_model`, `trace_autosar_model`, `diff_ecuc`, `set_ecuc_value`, `set_ecuc_values`, `find_module`,
+Supported functions are `inspect_ecuc_containers`, `inspect_autosar_model`, `audit_autosar_model`, `inspect_autosar_mapping`, `trace_autosar_model`, `set_asw_reference`, `write_asw_bundle`, `diff_ecuc`, `set_ecuc_value`, `set_ecuc_values`, `find_module`,
 `find_module_template`, `get_param_definition`, `locate_container`,
 `verify_delivery`, `edit_file`, `get_errors_list`, `auto_solve_errors`, `generate_code`,
 `update_project`, `import_dbc`, and `shutdown_host`. Legacy aliases for the three `find/get_bsw_*` names remain
@@ -306,10 +306,55 @@ accepted.
 Use `inspect_autosar_model` for bounded, read-only discovery across saved
 `Config/System` and `Config/Developer` ARXML. Filter with AUTOSAR XML element
 `kinds`, `name_regex`, `path_prefix`, or `references_to`. Use
-`trace_autosar_model` to follow `*-REF` edges and named containment between
+`trace_autosar_model` to follow `*-REF` and `*-TREF` edges and named containment between
 frames, mapping objects, PDUs, signals, SWCs, ports, interfaces and data types.
 Prefer an exact semantic `start` path and keep the default bounds unless a
 specific chain is truncated. Neither operation starts DaVinci or edits ARXML.
+For a large DBC-derived model, request `inspect_autosar_model` with
+`"summary_only":true` first. It returns matching object counts by kind (up to
+64 kinds) without object paths or references; existing scope and filters still
+apply. It does not compare old/new DBCs or validate every mapping. Inspect or
+trace only the selected changed or suspicious objects afterward.
+
+Use `audit_autosar_model` when the saved System/Developer model needs a compact
+reference-integrity pass. It counts `*-REF` / `*-TREF` targets absent from the
+selected scan scope, groups them by role, and returns 8 examples by default
+(maximum 32). Narrow source objects with `kinds` or `path_prefix`. A target
+absent from this index may still exist in a different extract, ECUC/SIP, or a
+file outside the scope; do not call it a DaVinci validation failure or create
+the target automatically. Re-query the relevant object and validate through
+DaVinci when the project task requires it. This request is read-only.
+
+```json
+{"func":"audit_autosar_model","scope":"model","path_prefix":"/Application","limit":8}
+```
+
+Use `inspect_autosar_mapping` for a compact saved-row overview of Port/Data and
+SWC/BSW RTE event-to-task mappings. `category` is `all` (default), `ports`,
+`data`, or `tasks`; `scope` applies to the System/Developer index. Task lookup
+also reads the DPA's Rte/Os files once each under the default model scope,
+without starting DaVinci. Start
+with `summary_only:true`, then use `issues_only:true` or `path_prefix` for
+details (default 8 rows, maximum 32, `offset`/`next_offset`, 64 KiB JSON budget).
+Each row retains file/XML location and reference locations, so anonymous rows
+and separate component-instance contexts are not merged. SWC rows retain their
+RteSoftwareComponentInstanceRef; BSW rows retain implementation/configuration
+context. Missing task references require review: direct-call scheduling may be
+valid. This does not expand every endpoint instance, establish full connection
+coverage, validate schedule periods, or replace DaVinci validation. Counts are
+saved rows, including duplicate extracts; missing references are scope-limited.
+
+```json
+{"func":"inspect_autosar_mapping","category":"all","summary_only":true}
+```
+
+```json
+{"func":"inspect_autosar_mapping","category":"tasks","issues_only":true,"limit":8}
+```
+
+```json
+{"func":"inspect_autosar_model","scope":"system","summary_only":true}
+```
 
 ```json
 {
@@ -318,6 +363,54 @@ specific chain is truncated. Neither operation starts DaVinci or edits ARXML.
   "direction": "both",
   "depth": 4,
   "node_limit": 64
+}
+```
+
+`model` and `developer` queries also cover project-contained application input
+folders registered by DPA `Folders/ApplicationComponentFolders`. Missing or
+external registered folders are excluded from this project-local scan. They
+are not evidence of missing ASW objects. `all` adds these inputs to `Config`.
+
+For typed ASW creation/update/deletion, use standalone `write_asw_bundle`.
+It writes one dedicated LGK-authored ARXML bundle in an existing,
+project-contained DPA application component input folder. `expected:null`
+requires an absent file; update/delete require the complete saved UTF-8
+content. Always preview first. The bundle can declare implementation types
+(scalar/alias/array/record), SR/CS interfaces, application SWCs, P/R ports,
+runnables with SR reads/writes and timing events, and local compositions with
+assembly/delegation connectors. Unknown fields, ambiguous/mismatched references,
+type cycles, invalid connector directions and external-dependency changes are
+rejected. See `docs/ASW写入与验收.md` for the exact contract and examples.
+Default writes remain saved ARXML operations; the result explicitly reports
+`davinci_validated:false`. A disposable DaVinci 5 create/reload/export,
+update/reload/export and delete/reload experiment passed, but this does not
+prove RTE generation, runnable code, ECU assignment or RTE-OS scheduling.
+
+For one existing ASW-side reference in `Config/Developer` or a registered
+project-contained application input, use a standalone
+`set_asw_reference` request. First inspect the exact object and follow its
+`*-TREF` or `*-REF` edge. The request requires an absolute project-local ARXML
+`file`, semantic `object_path`, object `kind`, reference element `role`, the
+saved `expected` path, and new absolute AUTOSAR path `value`. Run with
+`preview:true` first, then send the same request with `preview:false` and
+re-query. The target must already exist in saved System/Developer ARXML with
+the reference's `DEST` kind. The selected object and role must be unique.
+The tool closes its resident DaVinci session before a disk write, but the user
+must save and close the same GUI project first. This operation only retargets
+an existing reference; it does not create SWCs, ports, interfaces, data types,
+mapping objects, runnable behavior, or application code. Use DaVinci
+validation when the project task requires it.
+
+```json
+{
+  "func": "set_asw_reference",
+  "file": "D:/Work/Vehicle/Cfg/Config/Developer/Application.arxml",
+  "object_path": "/Application/SpeedConsumer/SpeedPort",
+  "kind": "R-PORT-PROTOTYPE",
+  "role": "REQUIRED-INTERFACE-TREF",
+  "expected": "/Application/SpeedInterface",
+  "value": "/Application/NewSpeedInterface",
+  "preview": true
 }
 ```
 
@@ -455,9 +548,17 @@ DaVinci, so it remains usable while the GUI owns the `.dpa` lock:
   -Request '{"func":"inspect_ecuc_containers","module":"Com","container":"ComSignal","short_name_regex":"^MySignal$","params":["ComBitPosition"]}'
 ```
 
-Multiple inspection requests may be sent as one JSON array; their matches are
-returned as one flat array. Do not mix inspection and other functions in the
-same batch.
+Inspection defaults to 32 matches (maximum `limit:256`) and a 64 KiB JSON
+response budget. Small legacy requests retain their array response. If more
+matches exist, the legacy form fails with `INSPECTION_PAGE_REQUIRED` rather
+than returning an incomplete array. Use `paged:true` to receive
+`{count,containers,limit,offset,truncated,next_offset}` and continue with the
+reported offset. Narrow `params` or `short_name_regex` if a page exceeds the
+byte budget. Neither values nor rows are silently truncated.
+
+Multiple inspection requests may be sent as one JSON array; legacy matches are
+returned as one flat array, while paged results retain their metadata objects.
+Do not mix inspection and other functions in the same batch.
 
 ## Project configuration
 
