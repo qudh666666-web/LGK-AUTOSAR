@@ -52,3 +52,7 @@ jobs:
       - name: Guard public repository contents
         shell: powershell
         run: .\tests\open-source\Invoke-OpenSourceGuard.ps1 -IncludeHistory
+
+      - name: Test public history guard regressions
+        shell: powershell
+        run: .\tests\open-source\Invoke-HistoryGuardSmoke.ps1
