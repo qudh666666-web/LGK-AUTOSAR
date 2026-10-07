@@ -15,7 +15,7 @@ use crate::app::{
 };
 use crate::project::SessionConfig;
 
-const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(175);
+const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(270);
 
 // --start-host 使用的入口：创建 Token，必要时启动后台 Host，并等待监听就绪。
 pub fn ensure_host() -> Result<()> {

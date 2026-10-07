@@ -25,6 +25,7 @@ struct Match {
 }
 
 pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
+    let (limit, offset) = validate_request(request)?;
     let module = super::required_module(request)?;
     let definition_ref = required_string(request, "definition_ref")?;
     let short_name_regex = request
@@ -105,13 +106,95 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
         }
     }
 
+    let count = matches.len();
+    let page = matches
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
+    let next = offset.saturating_add(page.len());
     Ok(json!({
         "module": module,
         "configPath": module_info.config_path,
         "definition_ref": definition_ref,
-        "count": matches.len(),
-        "containers": matches,
+        "count": count,
+        "containers": page,
+        "limit": limit,
+        "offset": offset,
+        "truncated": next < count,
+        "next_offset": if next < count { Some(next) } else { None },
     }))
+}
+
+/// Small, locally available contract; no project or Host is needed to read it.
+pub fn contract() -> Value {
+    json!({
+        "func": "locate_container",
+        "required": ["module", "definition_ref"],
+        "optional": {"module_name": "alias for module", "short_name_regex": "string; comma-separated regex alternatives", "limit": "integer 1..256, default 32", "offset": "nonnegative integer, default 0"},
+        "example": {"func": "locate_container", "module": "Com", "definition_ref": "/MICROSAR/Com/ComConfig/ComSignal", "short_name_regex": "^VehicleSpeed$", "limit": 8},
+        "notes": "Use the real definition_ref from find_module_template. query and path are not filters. count is the full match count; next_offset continues the page."
+    })
+}
+
+fn validate_request(request: &Value) -> Result<(usize, usize)> {
+    let mut issues = Vec::new();
+    for field in ["module", "definition_ref"] {
+        let value = if field == "module" {
+            request.get(field).or_else(|| request.get("module_name"))
+        } else {
+            request.get(field)
+        };
+        if !value
+            .and_then(Value::as_str)
+            .is_some_and(|s| !s.trim().is_empty())
+        {
+            issues.push(json!({"field": field, "reason": "nonempty string required"}));
+        }
+    }
+    if let Some(fields) = request.as_object() {
+        for field in fields.keys() {
+            if ![
+                "func",
+                "module",
+                "module_name",
+                "definition_ref",
+                "short_name_regex",
+                "limit",
+                "offset",
+            ]
+            .contains(&field.as_str())
+            {
+                issues.push(json!({"field": field, "reason": "unsupported field"}));
+            }
+        }
+    }
+    if let Some(value) = request.get("short_name_regex") {
+        if !value.is_string() {
+            issues.push(json!({"field": "short_name_regex", "reason": "string required"}));
+        }
+    }
+    let limit = request.get("limit").map_or(Some(32), Value::as_u64);
+    let offset = request.get("offset").map_or(Some(0), Value::as_u64);
+    if !limit.is_some_and(|n| (1..=256).contains(&n)) {
+        issues.push(json!({"field": "limit", "reason": "integer 1..256 required"}));
+    }
+    if !offset.is_some_and(|n| usize::try_from(n).is_ok()) {
+        issues.push(
+            json!({"field": "offset", "reason": "nonnegative platform-sized integer required"}),
+        );
+    }
+    if !issues.is_empty() {
+        let total = issues.len();
+        issues.truncate(8);
+        return Err(crate::diagnostic::failure(
+            "INVALID_REQUEST",
+            "invalid locate_container request; fix fields together",
+            "request",
+            json!({"issues": issues, "issue_count": total, "contract": contract()}),
+        ));
+    }
+    Ok((limit.unwrap() as usize, offset.unwrap() as usize))
 }
 
 fn line_number_at(line_starts: &[usize], byte_offset: usize) -> usize {

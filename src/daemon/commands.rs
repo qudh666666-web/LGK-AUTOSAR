@@ -97,9 +97,17 @@ impl CommandDispatcher {
             "inspect_autosar_model" => {
                 ops::autosar_model::inspect(config, request)?;
             }
+            "audit_autosar_model" => {
+                ops::autosar_model::audit_references(config, request)?;
+            }
+            "inspect_autosar_mapping" => {
+                ops::autosar_model::inspect_mapping(config, request)?;
+            }
             "trace_autosar_model" => {
                 ops::autosar_model::trace(config, request)?;
             }
+            "set_asw_reference" => ops::autosar_model::validate_asw_reference(config, request)?,
+            "write_asw_bundle" => ops::autosar_model::validate_bundle(config, request)?,
             "locate_container" => {
                 ops::locate_container::execute(config, request)?;
             }
@@ -110,6 +118,7 @@ impl CommandDispatcher {
                 ops::diff_ecuc::execute(config, request)?;
             }
             "set_ecuc_value" => ops::set_ecuc_value::validate(config, request)?,
+            "set_ecuc_values" => ops::set_ecuc_value::validate_group(config, request)?,
             "edit_file" => ops::edit_file::validate(config, request)?,
             "get_errors_list" => {
                 optional_module(request)?;
@@ -137,6 +146,7 @@ impl CommandDispatcher {
                     let module_info = modules.find(module)?;
                     read_module_definition_ref(&module_info.config_path, &module_info.module)?;
                 }
+                crate::vector::generated_files::GeneratedSnapshot::validate(config, request)?;
                 validate_davinci_dependencies(config)?;
             }
             "update_project" | "import_dbc" => project_update::validate(config, request)?,
@@ -162,7 +172,21 @@ impl CommandDispatcher {
             }
             "inspect_ecuc_containers" => ops::inspect_ecuc_containers::execute(config, request),
             "inspect_autosar_model" => ops::autosar_model::inspect(config, request),
+            "audit_autosar_model" => ops::autosar_model::audit_references(config, request),
+            "inspect_autosar_mapping" => ops::autosar_model::inspect_mapping(config, request),
             "trace_autosar_model" => ops::autosar_model::trace(config, request),
+            "write_asw_bundle" => {
+                if self.davinci.is_some() {
+                    bail!("close the resident DaVinci session before saved ASW writes; use shutdown_host");
+                }
+                ops::autosar_model::write_bundle(config, request)
+            }
+            "set_asw_reference" => {
+                if let Some(client) = self.davinci.take() {
+                    client.shutdown()?;
+                }
+                ops::autosar_model::set_asw_reference(config, request)
+            }
             "locate_container" => ops::locate_container::execute(config, request),
             "verify_delivery" => ops::verify_delivery::execute(config, request),
             "diff_ecuc" => ops::diff_ecuc::execute(config, request),
@@ -171,6 +195,12 @@ impl CommandDispatcher {
                     client.shutdown()?;
                 }
                 ops::set_ecuc_value::execute(config, request)
+            }
+            "set_ecuc_values" => {
+                if let Some(client) = self.davinci.take() {
+                    client.shutdown()?;
+                }
+                ops::set_ecuc_value::execute_group(config, request)
             }
             "edit_file" => {
                 // A previous get_errors/generate request may have left DaVinci's
@@ -215,16 +245,20 @@ impl CommandDispatcher {
                 // Snapshot report metadata before generation; only a changed
                 // report from this operation can serve as acceptance evidence.
                 let reports = crate::vector::generation_report::ReportSnapshot::capture(config)?;
+                let generated =
+                    crate::vector::generated_files::GeneratedSnapshot::capture(config, request)?;
                 self.with_davinci(config, |client| {
                     client.generate(module, definition_ref.as_deref())
                 })?;
                 let report = reports.verify(definition_ref.as_deref())?;
+                let files = generated.diff()?;
                 Ok(json!({
                     "module": module,
                     "definition_ref": definition_ref,
                     "message": "Generation verified",
                     "passed": true,
-                    "report": report
+                    "report": report,
+                    "generated_files": files
                 }))
             }
             "update_project" | "import_dbc" => {
@@ -293,7 +327,7 @@ fn validate_batch_shape(parsed: &Value) -> Result<(Vec<&Value>, bool)> {
             .any(|item| request_func(item).is_some_and(is_mutating_func))
     {
         bail!(
-            "set_ecuc_value, edit_file, auto_solve_errors, generate_code, update_project, and import_dbc must be standalone requests; multi-item batches are read-only"
+            "write_asw_bundle, set_asw_reference, set_ecuc_value, set_ecuc_values, edit_file, auto_solve_errors, generate_code, update_project, and import_dbc must be standalone requests; multi-item batches are read-only"
         );
     }
     Ok((items, inspect_count != 0))
@@ -312,7 +346,10 @@ fn request_func(request: &Value) -> Option<&str> {
 fn is_mutating_func(func: &str) -> bool {
     matches!(
         func,
-        "set_ecuc_value"
+        "write_asw_bundle"
+            | "set_asw_reference"
+            | "set_ecuc_value"
+            | "set_ecuc_values"
             | "edit_file"
             | "auto_solve_errors"
             | "generate_code"

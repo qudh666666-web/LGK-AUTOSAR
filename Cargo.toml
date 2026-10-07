@@ -1,6 +1,6 @@
 [package]
 name = "lgk-autosar"
-version = "0.4.0"
+version = "0.4.2"
 edition = "2021"
 description = "Open-source local bridge for licensed Vector DaVinci ECUC projects"
 license = "MIT"

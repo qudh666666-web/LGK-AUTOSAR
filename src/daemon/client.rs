@@ -15,7 +15,7 @@ use crate::project::SessionConfig;
 
 // 编译时把 Groovy 代理嵌入 EXE；运行时再写入临时目录交给 DVCfgCmd。
 const DAEMON_SCRIPT: &str = include_str!("../../assets/LGKAutosarDaemon.dvgroovy");
-const DAVINCI_START_TIMEOUT: Duration = Duration::from_secs(45);
+const DAVINCI_START_TIMEOUT: Duration = Duration::from_secs(120);
 const DAVINCI_OPERATION_TIMEOUT: Duration = Duration::from_secs(120);
 const DAVINCI_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 const DAVINCI_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -424,10 +424,10 @@ mod tests {
     };
 
     #[test]
-    fn ordinary_operation_budget_does_not_exceed_three_minutes() {
+    fn daemon_operation_budget_fits_host_request() {
         assert!(
             DAVINCI_START_TIMEOUT + DAVINCI_OPERATION_TIMEOUT + DAVINCI_SHUTDOWN_TIMEOUT
-                <= std::time::Duration::from_secs(180)
+                <= std::time::Duration::from_secs(270)
         );
         assert!(DAVINCI_DISCOVERY_TIMEOUT <= std::time::Duration::from_secs(2));
     }

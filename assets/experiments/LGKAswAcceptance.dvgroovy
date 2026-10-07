@@ -1,0 +1,80 @@
+import static com.vector.cfg.automation.api.ScriptApi.*
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+import com.vector.cfg.model.mdf.ar4x.commonstructure.implementationdatatypes.MIImplementationDataType
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.components.MIApplicationSwComponentType
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.components.MIPPortPrototype
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.components.MIRPortPrototype
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.portinterface.MISenderReceiverInterface
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.portinterface.MIClientServerInterface
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.composition.MICompositionSwComponentType
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.composition.MIAssemblySwConnector
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.composition.MIDelegationSwConnector
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.swcinternalbehavior.MIRunnableEntity
+import com.vector.cfg.model.mdf.ar4x.swcomponenttemplate.swcinternalbehavior.rteevents.MITimingEvent
+
+// Independently authored, read-only model acceptance for a disposable project.
+// ASW creation/update/deletion is performed by the public LGK request first.
+daVinci {
+    scriptDescription "Read and export the LGK ASW acceptance bundle"
+    scriptTask("LGKAswAcceptance", DV_PROJECT) {
+        code {
+            def active = projects.activeProject
+            File dpa = active.dpaProjectFilePath.toFile().canonicalFile
+            File manifest = new File(dpa.parentFile, "lgk-asw-acceptance.json")
+            def request = new JsonSlurper().parse(manifest, "UTF-8")
+            if (request.schema != 1 || request.disposable != true || request.phase != "prepared" ||
+                dpa.path != new File(request.project_file.toString()).canonicalPath ||
+                dpa.parentFile.path != new File(request.root.toString()).canonicalPath) {
+                throw new IllegalArgumentException("Invalid disposable ASW manifest")
+            }
+            request.phase = "started"
+            manifest.setText(JsonOutput.toJson(request), "UTF-8")
+            String prefix = "/LGKAswAcceptance"
+            def packageObjects = mdfModel(prefix)
+            def checked = 0
+            if (request.deleted == true) {
+                if (!packageObjects.isEmpty()) throw new IllegalStateException("Deleted ASW package remains in loaded model")
+            } else {
+                if (packageObjects.size() != 1) throw new IllegalStateException("ASW package was not uniquely loaded")
+                def expected = [
+                    Counter: MIImplementationDataType, NativeByte: MIImplementationDataType,
+                    Buffer: MIImplementationDataType, Pair: MIImplementationDataType,
+                    Values: MISenderReceiverInterface, Api: MIClientServerInterface,
+                    Producer: MIApplicationSwComponentType, Consumer: MIApplicationSwComponentType,
+                    "Producer/Out": MIPPortPrototype, "Consumer/In": MIRPortPrototype,
+                    "Producer/InternalBehavior/Tick": MIRunnableEntity,
+                    "Producer/InternalBehavior/Timer_Tick": MITimingEvent,
+                    Root: MICompositionSwComponentType,
+                    "Root/Link": MIAssemblySwConnector, "Root/Expose": MIDelegationSwConnector
+                ]
+                expected.each { relative, type ->
+                    def found = mdfModel(prefix + "/" + relative)
+                    if (found.size() != 1 || !type.isInstance(found[0])) {
+                        throw new IllegalStateException("Loaded ASW object missing or wrong kind: " + relative)
+                    }
+                    checked++
+                }
+                def exportPath = new File(dpa.parentFile, "native-asw-" + request.stage + ".arxml").toPath()
+                persistency { modelExport { exportModelTreeToFile(exportPath, packageObjects[0]) } }
+                def factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+                factory.setNamespaceAware(true)
+                factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+                def doc = factory.newDocumentBuilder().parse(exportPath.toFile())
+                def periods = doc.getElementsByTagNameNS("*", "PERIOD")
+                if (periods.length != 1 || new BigDecimal(periods.item(0).textContent) != new BigDecimal(request.period.toString())) {
+                    throw new IllegalStateException("Native timing-event period did not match")
+                }
+            }
+            def errors = validation { validationResults.count { it.severity.toString().equalsIgnoreCase("ERROR") } }
+            active.saveProject()
+            request.phase = "completed"
+            manifest.setText(JsonOutput.toJson(request), "UTF-8")
+            println "LGK_ASW_ACCEPTANCE_JSON:" + JsonOutput.toJson([
+                stage: request.stage, loaded: request.deleted != true,
+                deleted: request.deleted == true, checked_objects: checked,
+                errors: errors, native_project_saved: true, generation_executed: false
+            ])
+        }
+    }
+}

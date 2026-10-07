@@ -1,4 +1,5 @@
 //! Semantically target one existing ECUC parameter or reference value.
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -14,6 +15,9 @@ use crate::vector::search::{child, child_text};
 const MAX_FILE_SIZE: u64 = 64 * 1024 * 1024;
 const MAX_REQUEST_VALUE_CHARS: usize = 4096;
 const MAX_RESPONSE_VALUE_CHARS: usize = 512;
+const MAX_GROUP_EDITS: usize = 32;
+const MAX_GROUP_FILES: usize = 8;
+const MAX_GROUP_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FrameKind {
@@ -78,6 +82,12 @@ struct PreparedEdit {
     changed: bool,
 }
 
+struct FileEdit {
+    path: PathBuf,
+    original: Vec<u8>,
+    updated: Vec<u8>,
+}
+
 pub fn validate(config: &SessionConfig, request: &Value) -> Result<()> {
     prepare(config, request).map(|_| ())
 }
@@ -87,6 +97,31 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     if prepared.changed {
         super::edit_file::replace_checked(&prepared.path, &prepared.original, &prepared.updated)?;
     }
+    Ok(edit_response(&prepared))
+}
+
+pub fn validate_group(config: &SessionConfig, request: &Value) -> Result<()> {
+    prepare_group(config, request).map(|_| ())
+}
+
+pub fn execute_group(config: &SessionConfig, request: &Value) -> Result<Value> {
+    let (files, edits) = prepare_group(config, request)?;
+    let preview = request.get("preview").and_then(Value::as_bool) == Some(true);
+    let changed_files = files
+        .iter()
+        .filter(|file| file.original != file.updated)
+        .count();
+    if !preview {
+        commit_group(&files)?;
+    }
+    Ok(json!({
+        "preview": preview,
+        "changed_files": changed_files,
+        "edits": edits,
+    }))
+}
+
+fn edit_response(prepared: &PreparedEdit) -> Value {
     let (old, old_truncated) = bounded(&prepared.current);
     let (new, new_truncated) = bounded(&prepared.replacement);
     let mut response = json!({
@@ -104,10 +139,152 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
     if new_truncated {
         response["new_truncated"] = json!(true);
     }
-    Ok(response)
+    response
 }
 
 fn prepare(config: &SessionConfig, request: &Value) -> Result<PreparedEdit> {
+    let modules = ModuleIndex::load(config)?;
+    prepare_with_state(config, &modules, request, &BTreeMap::new())
+}
+
+fn prepare_group(config: &SessionConfig, request: &Value) -> Result<(Vec<FileEdit>, Vec<Value>)> {
+    if request
+        .get("preview")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        bail!("preview must be a boolean");
+    }
+    let items = request
+        .get("edits")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("edits must be an array"))?;
+    if items.is_empty() || items.len() > MAX_GROUP_EDITS {
+        bail!("edits must contain 1 to {MAX_GROUP_EDITS} items");
+    }
+    let modules = ModuleIndex::load(config)?;
+    let mut originals = BTreeMap::new();
+    let mut working = BTreeMap::new();
+    let mut targets = BTreeSet::new();
+    let mut responses = Vec::with_capacity(items.len());
+    let mut total_bytes = 0usize;
+    for (index, item) in items.iter().enumerate() {
+        let prepared = prepare_with_state(config, &modules, item, &working)
+            .with_context(|| format!("edits[{index}] failed preflight"))?;
+        if !targets.insert((prepared.path.clone(), prepared.semantic_path.clone())) {
+            bail!("edits[{index}] repeats the same ECUC value");
+        }
+        if !originals.contains_key(&prepared.path) {
+            if originals.len() >= MAX_GROUP_FILES {
+                bail!("edits span more than {MAX_GROUP_FILES} files");
+            }
+            total_bytes = total_bytes
+                .checked_add(prepared.original.len())
+                .ok_or_else(|| anyhow::anyhow!("group size overflow"))?;
+            if total_bytes > MAX_GROUP_BYTES {
+                bail!("edits span more than 128 MiB of ECUC files");
+            }
+            originals.insert(prepared.path.clone(), prepared.original.clone());
+        }
+        working.insert(prepared.path.clone(), prepared.updated.clone());
+        responses.push(edit_response(&prepared));
+    }
+    let files = originals
+        .into_iter()
+        .map(|(path, original)| FileEdit {
+            updated: working.remove(&path).expect("working copy"),
+            path,
+            original,
+        })
+        .collect();
+    Ok((files, responses))
+}
+
+fn commit_group(files: &[FileEdit]) -> Result<()> {
+    commit_group_with(files, super::edit_file::replace_checked)
+}
+
+fn commit_group_with(
+    files: &[FileEdit],
+    mut replace: impl FnMut(&Path, &[u8], &[u8]) -> Result<()>,
+) -> Result<()> {
+    for file in files {
+        if fs::read(&file.path)? != file.original {
+            bail!(
+                "group precondition failed before writing {}; no files were changed",
+                file.path.display()
+            );
+        }
+    }
+    let mut committed: Vec<&FileEdit> = Vec::new();
+    for file in files.iter().filter(|file| file.original != file.updated) {
+        if let Err(error) = replace(&file.path, &file.original, &file.updated) {
+            let mut rollback_errors = Vec::new();
+            for prior in committed.into_iter().rev() {
+                if let Err(rollback_error) =
+                    super::edit_file::replace_checked(&prior.path, &prior.updated, &prior.original)
+                {
+                    rollback_errors.push(format!("{}: {rollback_error:#}", prior.path.display()));
+                }
+            }
+            if rollback_errors.is_empty() {
+                bail!(
+                    "group write failed at {}: {error:#}; earlier writes were rolled back",
+                    file.path.display()
+                );
+            }
+            bail!(
+                "group write failed at {}: {error:#}; rollback failed: {}",
+                file.path.display(),
+                rollback_errors.join(" | ")
+            );
+        }
+        committed.push(file);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod group_tests {
+    use super::*;
+
+    #[test]
+    fn failed_second_file_rolls_back_first_file() {
+        let root = tempfile::tempdir().unwrap();
+        let first = root.path().join("first.arxml");
+        let second = root.path().join("second.arxml");
+        fs::write(&first, b"one").unwrap();
+        fs::write(&second, b"two").unwrap();
+        let files = vec![
+            FileEdit {
+                path: first.clone(),
+                original: b"one".to_vec(),
+                updated: b"ONE".to_vec(),
+            },
+            FileEdit {
+                path: second.clone(),
+                original: b"two".to_vec(),
+                updated: b"TWO".to_vec(),
+            },
+        ];
+        let error = commit_group_with(&files, |path, old, new| {
+            if path == second {
+                bail!("injected failure");
+            }
+            super::super::edit_file::replace_checked(path, old, new)
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("rolled back"));
+        assert_eq!(fs::read(first).unwrap(), b"one");
+        assert_eq!(fs::read(second).unwrap(), b"two");
+    }
+}
+
+fn prepare_with_state(
+    config: &SessionConfig,
+    modules: &ModuleIndex,
+    request: &Value,
+    working: &BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<PreparedEdit> {
     let requested_module = super::required_module(request)?;
     if requested_module.eq_ignore_ascii_case("all") {
         bail!("set_ecuc_value requires one concrete module");
@@ -120,12 +297,14 @@ fn prepare(config: &SessionConfig, request: &Value) -> Result<PreparedEdit> {
         bail!("value must not exceed {MAX_REQUEST_VALUE_CHARS} Unicode characters");
     }
 
-    let modules = ModuleIndex::load(config)?;
     let module = modules.find(requested_module)?;
     let path = config.ensure_project_file(&module.config_path)?;
     ensure_arxml_size(&path)?;
-    let original = fs::read(&path)
-        .with_context(|| format!("failed to read ECUC configuration: {}", path.display()))?;
+    let original = match working.get(&path) {
+        Some(bytes) => bytes.clone(),
+        None => fs::read(&path)
+            .with_context(|| format!("failed to read ECUC configuration: {}", path.display()))?,
+    };
     let bom_len = usize::from(original.starts_with(&[0xEF, 0xBB, 0xBF])) * 3;
     let text = std::str::from_utf8(&original[bom_len..])
         .with_context(|| format!("ECUC configuration is not UTF-8: {}", path.display()))?;

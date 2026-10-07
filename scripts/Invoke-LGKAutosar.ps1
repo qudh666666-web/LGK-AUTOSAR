@@ -208,9 +208,14 @@ try {
     $allowedFunctions = @(
         'inspect_ecuc_containers',
         'inspect_autosar_model',
+        'audit_autosar_model',
+        'inspect_autosar_mapping',
         'trace_autosar_model',
+        'set_asw_reference',
+        'write_asw_bundle',
         'diff_ecuc',
         'set_ecuc_value',
+        'set_ecuc_values',
         'find_module',
         'find_bsw_module',
         'find_module_template',
@@ -240,7 +245,7 @@ try {
         }
     }
     $mutatingFunctions = @(
-        'set_ecuc_value', 'edit_file', 'auto_solve_errors', 'generate_code',
+        'write_asw_bundle', 'set_asw_reference', 'set_ecuc_value', 'set_ecuc_values', 'edit_file', 'auto_solve_errors', 'generate_code',
         'update_project', 'import_dbc', 'shutdown_host'
     )
     if ($requestObject -is [System.Array] -and $requestObject.Count -gt 1) {
@@ -275,7 +280,7 @@ try {
             Start-BridgeHost
         }
         # 真正的请求处理从这里进入 Rust CLI，再转给 resident Host。
-        $requestResult = Invoke-BridgeExecutable -FilePath $executable -Arguments @('--request-file', $requestPath) -TimeoutSeconds 185
+        $requestResult = Invoke-BridgeExecutable -FilePath $executable -Arguments @('--request-file', $requestPath) -TimeoutSeconds 280
         if ($requestResult.ExitCode -ne 0) {
             $requestDetail = ("{0} {1}" -f $requestResult.StdOut, $requestResult.StdErr).Trim()
             throw "Bridge request failed (exit $($requestResult.ExitCode), request: $requestPath): $requestDetail"

@@ -74,6 +74,7 @@ try {
     Write-Utf8 -Path $dpa -Content @'
 <?xml version="1.0"?>
 <ProjectAssistant>
+  <Folders><ApplicationComponentFolders><ApplicationComponentFolder>Config\Developer</ApplicationComponentFolder></ApplicationComponentFolders></Folders>
   <EcucSplitter>
     <Splitter File=".\Config\ECUC\Public_Com_ecuc.arxml"><Module Name="Com"/></Splitter>
   </EcucSplitter>
@@ -121,7 +122,7 @@ try {
     Assert-True ($doctor.valid -eq $true) 'initializer doctor must report valid=true'
     Assert-True ($doctor.preflight -eq 'static') 'doctor must label itself as a static preflight'
     Assert-True ($doctor.davinci_executed -eq $false) 'doctor must not claim that DaVinci was executed'
-    Assert-True ($doctor.version -eq '0.4.0') 'initializer must use the current release binary'
+    Assert-True ($doctor.version -eq '0.4.2') 'initializer must use the current release binary'
     Assert-True ($doctorWatch.Elapsed.TotalSeconds -lt 2) 'doctor must complete in under 2 seconds on the public fixture'
 
     $updateDoctorOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"update_project"}' -ValidateOnly)
@@ -223,6 +224,68 @@ $ErrorActionPreference = 'Stop'
     $inspect = (($inspectOutput | Out-String) | ConvertFrom-Json)
     Assert-True (@($inspect).Count -eq 1) 'inspect must return one configured signal'
     Assert-True ([string]$inspect.values.ComBitPosition -eq '8') 'inspect must return ComBitPosition=8'
+
+    $pagedOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"inspect_ecuc_containers","module":"Com","container":"ComSignal","paged":true,"limit":1}')
+    $paged = (($pagedOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($paged.count -eq 1 -and @($paged.containers).Count -eq 1 -and -not $paged.truncated) 'paged inspection must expose total and completeness'
+
+    Write-Utf8 -Path (Join-Path $project 'Config\Developer\SyntheticMappings.arxml') -Content '<AUTOSAR><SENDER-RECEIVER-TO-SIGNAL-MAPPING><TARGET-DATA-PROTOTYPE-REF>/External/Data</TARGET-DATA-PROTOTYPE-REF><SYSTEM-SIGNAL-REF>/External/Signal</SYSTEM-SIGNAL-REF></SENDER-RECEIVER-TO-SIGNAL-MAPPING><SENDER-RECEIVER-TO-SIGNAL-MAPPING><TARGET-DATA-PROTOTYPE-REF>/External/Data</TARGET-DATA-PROTOTYPE-REF><SYSTEM-SIGNAL-REF>/External/Signal</SYSTEM-SIGNAL-REF></SENDER-RECEIVER-TO-SIGNAL-MAPPING></AUTOSAR>'
+    $mappingOutput = @(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"inspect_autosar_mapping","category":"data","summary_only":true}')
+    $mapping = (($mappingOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($mapping.count -eq 2 -and @($mapping.rows).Count -eq 0) 'mapping summary must count anonymous rows without returning each one'
+    Assert-True ($mapping.unresolved_references_in_scope -eq 4) 'mapping must report scope-limited evidence rather than a DaVinci validation result'
+
+    Write-Utf8 -Path (Join-Path $project 'Config\Developer\PublicTypes.arxml') -Content '<AUTOSAR><AR-PACKAGES><AR-PACKAGE><SHORT-NAME>PublicTypes</SHORT-NAME><ELEMENTS><IMPLEMENTATION-DATA-TYPE><SHORT-NAME>Byte</SHORT-NAME></IMPLEMENTATION-DATA-TYPE></ELEMENTS></AR-PACKAGE></AR-PACKAGES></AUTOSAR>'
+    $aswFile = Join-Path $project 'Config\Developer\Authored.arxml'
+    $aswRequest = @{func='write_asw_bundle';file=$aswFile;expected=$null;preview=$true;bundle=@{package='Authored';
+        types=@(@{kind='alias';name='Counter';type_ref='/PublicTypes/Byte'});
+        interfaces=@(@{kind='sender_receiver';name='Values';data_elements=@(@{name='Count';type_ref='/Authored/Counter'})});
+        components=@(@{name='Producer';ports=@(@{name='Out';direction='provide';interface_ref='/Authored/Values'})})}}
+    $aswPreview = (@(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request ($aswRequest | ConvertTo-Json -Depth 10 -Compress)) | Out-String) | ConvertFrom-Json
+    Assert-True ($aswPreview.preview -and -not (Test-Path -LiteralPath $aswFile)) 'ASW bundle preview must not write a file'
+    Assert-True (-not $aswPreview.davinci_validated) 'ASW disk preview must not claim native validation'
+    $aswRequest.preview=$false
+    & $wrapper -ProjectPath $project -ExecutablePath $executable -Request ($aswRequest | ConvertTo-Json -Depth 10 -Compress) | Out-Null
+    Assert-True (Test-Path -LiteralPath $aswFile) 'ASW bundle must create a registered input file'
+    Assert-Fails { & $wrapper -ProjectPath $project -ExecutablePath $executable -Request ($aswRequest | ConvertTo-Json -Depth 10 -Compress) | Out-Null } 'absent file'
+    Assert-Fails { & $wrapper -ProjectPath $project -ExecutablePath $executable -Request '[{"func":"find_module","module":"Com"},{"func":"write_asw_bundle"}]' | Out-Null } "Mutating function 'write_asw_bundle'"
+    $aswInspect = (@(& $wrapper -ProjectPath $project -ExecutablePath $executable -Request '{"func":"inspect_autosar_model","path_prefix":"/Authored","summary_only":true}') | Out-String) | ConvertFrom-Json
+    Assert-True ($aswInspect.total -eq 6) 'ASW created objects must be discoverable through the wrapper'
+    $aswDelete=@{func='write_asw_bundle';file=$aswFile;expected=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($aswFile));delete=$true;preview=$true}
+    & $wrapper -ProjectPath $project -ExecutablePath $executable -Request ($aswDelete | ConvertTo-Json -Depth 4 -Compress) | Out-Null
+    Assert-True (Test-Path -LiteralPath $aswFile) 'ASW deletion preview must preserve the file'
+    $aswDelete.preview=$false
+    & $wrapper -ProjectPath $project -ExecutablePath $executable -Request ($aswDelete | ConvertTo-Json -Depth 4 -Compress) | Out-Null
+    Assert-True (-not (Test-Path -LiteralPath $aswFile)) 'ASW deletion must require and match complete old content'
+
+    # Native preparation is synthetic only: it must never invoke the empty
+    # DaVinci placeholder or reuse a customer project as a writable fixture.
+    $nativeSample = Join-Path $temporaryRoot 'NativeSample'
+    $nativeWork = Join-Path $temporaryRoot 'NativeDisposable'
+    Write-Utf8 -Path (Join-Path $nativeSample 'Native.dpa') -Content '<ProjectAssistant><Folders><SIP>..\SIP</SIP></Folders><EcucSplitter><Splitter File="Native.arxml"><Module Name="Com"/></Splitter></EcucSplitter></ProjectAssistant>'
+    Write-Utf8 -Path (Join-Path $nativeSample 'Native.arxml') -Content '<AUTOSAR><ECUC-NUMERICAL-PARAM-VALUE><DEFINITION-REF DEST="ECUC-BOOLEAN-PARAM-DEF">/PublicStack/Com/Flag</DEFINITION-REF><VALUE>false</VALUE></ECUC-NUMERICAL-PARAM-VALUE></AUTOSAR>'
+    $sourceHash = (Get-FileHash -LiteralPath (Join-Path $nativeSample 'Native.arxml')).Hash
+    $nativeDriver = Join-Path $repository 'scripts\Invoke-LGKNativeBooleanProbe.ps1'
+    $nativeIni = Join-Path $tool 'DaVinciConfigurator\Core\DVCfgCmd.ini'
+    Write-Utf8 -Path $nativeIni -Content "-application`npublic.synthetic.application`n-vmargs`n-Xmx16384m`n-Dfile.encoding=UTF-8`n"
+    $sourceIniHash = (Get-FileHash -LiteralPath $nativeIni).Hash
+    $nativeOutput = @(& $nativeDriver -SampleProjectPath $nativeSample -ToolPath $tool -WorkRoot $nativeWork -PrepareOnly)
+    $nativePrepared = (($nativeOutput | Out-String) | ConvertFrom-Json)
+    Assert-True ($nativePrepared.prepared -and -not $nativePrepared.davinci_executed) 'native prepare-only must not launch DaVinci'
+    Assert-True ([IO.File]::ReadAllText((Join-Path $nativeWork 'DVCfgCmd.probe.ini')) -eq [IO.File]::ReadAllText($nativeIni).Replace('-Xmx16384m','-Xmx1024m') -and $nativePrepared.jvm_heap_mib -eq 1024) 'native private launcher must change only the JVM heap argument'
+    Assert-True ((Get-FileHash -LiteralPath $nativeIni).Hash -eq $sourceIniHash) 'native preparation must preserve the vendor launcher INI'
+    $nativeManifest = ([IO.File]::ReadAllText((Join-Path $nativeWork 'lgk-native-probe.json')) | ConvertFrom-Json)
+    Assert-True ($nativeManifest.phase -eq 'prepared' -and -not $nativeManifest.expected -and $nativeManifest.value) 'native manifest must preserve old value and stage a Boolean change'
+    Assert-True ((Get-FileHash -LiteralPath (Join-Path $nativeSample 'Native.arxml')).Hash -eq $sourceHash) 'native preparation must preserve input sample bytes'
+    Assert-Fails { & $nativeDriver -SampleProjectPath $nativeSample -ToolPath $tool -WorkRoot $nativeWork -PrepareOnly | Out-Null } 'already exists'
+    Assert-Fails { & $nativeDriver -SampleProjectPath $nativeSample -ToolPath $tool -WorkRoot (Join-Path $tool 'UnsafeProbe') -PrepareOnly | Out-Null } 'outside the source'
+    $escapeDpa = Join-Path $nativeSample 'Native.dpa'
+    Write-Utf8 -Path $escapeDpa -Content ([IO.File]::ReadAllText($escapeDpa).Replace('</EcucSplitter>','<Splitter File="..\Outside.arxml"><Module Name="Os"/></Splitter></EcucSplitter>'))
+    Assert-Fails { & $nativeDriver -SampleProjectPath $nativeSample -ToolPath $tool -WorkRoot (Join-Path $temporaryRoot 'NativeEscapeRejected') -PrepareOnly | Out-Null } 'escapes disposable root'
+    Write-Utf8 -Path $nativeIni -Content "-vmargs`n-Dfile.encoding=UTF-8`n"
+    $invalidHeapWork = Join-Path $temporaryRoot 'NativeHeapRejected'
+    Assert-Fails { & $nativeDriver -SampleProjectPath $nativeSample -ToolPath $tool -WorkRoot $invalidHeapWork -PrepareOnly | Out-Null } 'one explicit JVM heap limit'
+    Assert-True (-not (Test-Path -LiteralPath $invalidHeapWork)) 'unrecognized launcher heap must fail before copying the sample'
 
     $diffRight = Join-Path $project 'Config\ECUC\Public_Com_changed.arxml'
     Write-Utf8 -Path $diffRight -Content ([IO.File]::ReadAllText($ecuc).Replace('<VALUE>8</VALUE>', '<VALUE>16</VALUE>'))
@@ -389,7 +452,7 @@ $ErrorActionPreference = 'Stop'
     $packageWrapper = Join-Path $packageRuntime 'Invoke-LGKAutosar.ps1'
     $packageDoctorOutput = @(& $packageInitializer -ProjectPath $packageProject -ToolPath $tool)
     $packageDoctor = (($packageDoctorOutput | Out-String) | ConvertFrom-Json)
-    Assert-True ($packageDoctor.version -eq '0.4.0') 'packaged initializer must use packaged binaries by default'
+    Assert-True ($packageDoctor.version -eq '0.4.2') 'packaged initializer must use packaged binaries by default'
 
     $activeWrapper = $packageWrapper
     $activeProject = $packageProject

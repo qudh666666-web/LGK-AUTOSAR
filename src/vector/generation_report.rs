@@ -115,10 +115,12 @@ fn parse_report(html: &str, definition_ref: Option<&str>) -> Result<usize> {
         .captures(&text)
         .ok_or_else(|| anyhow::anyhow!("unsupported report: missing validation totals"))?;
     if counts[1].parse::<u64>()? != 0 || counts[2].parse::<u64>()? != 0 {
+        let details = validation_error_details(body)?;
         bail!(
-            "validation has {} fatal error(s) and {} error(s)",
+            "validation has {} fatal error(s) and {} error(s){}",
             &counts[1],
-            &counts[2]
+            &counts[2],
+            details.map_or_else(String::new, |value| format!("; {value}"))
         );
     }
     if !Regex::new(
@@ -171,6 +173,58 @@ fn parse_report(html: &str, definition_ref: Option<&str>) -> Result<usize> {
     Ok(verified)
 }
 
+fn validation_error_details(body: &str) -> Result<Option<String>> {
+    let end = body.find("Generation Results").unwrap_or(body.len());
+    let section = &body[..end];
+    let spans = Regex::new(r#"(?is)<span\b[^>]*class=['"]([^'"]*)['"][^>]*>([^<]*)</span>"#)?;
+    let code = Regex::new(r"(?i)^[A-Z][A-Z0-9_]{1,15}\d{3,6}\b")?;
+    let mut issues: Vec<(String, Vec<String>)> = Vec::new();
+    let mut fallback = Vec::new();
+    for span in spans.captures_iter(section) {
+        let classes = span[1].split_whitespace().collect::<Vec<_>>();
+        let value = plain(&span[2])?;
+        if value.is_empty() {
+            continue;
+        }
+        if classes.contains(&"icon-error") {
+            if code.is_match(&value) {
+                if issues.len() >= 4 {
+                    break;
+                }
+                issues.push((truncate_chars(&value, 160), Vec::new()));
+            } else if let Some((_, details)) = issues.last_mut() {
+                if details.len() < 5 {
+                    details.push(truncate_chars(&value, 160));
+                }
+            } else if fallback.len() < 4 {
+                fallback.push(truncate_chars(&value, 160));
+            }
+        } else if (classes.contains(&"icon-parameter") || classes.contains(&"icon-container"))
+            && value.starts_with('/')
+        {
+            if let Some((_, details)) = issues.last_mut() {
+                if details.len() < 5 {
+                    details.push(truncate_chars(&value, 180));
+                }
+            }
+        }
+    }
+    let details = if issues.is_empty() {
+        fallback.join("; ")
+    } else {
+        issues
+            .into_iter()
+            .map(|(label, details)| format!("{label}: {}", details.join("; ")))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
+    Ok((!details.is_empty()).then_some(details))
+}
+
+fn truncate_chars(value: &str, limit: usize) -> String {
+    value.chars().take(limit).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +260,18 @@ mod tests {
         ] {
             assert!(parse_report(&invalid, None).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn reports_bounded_validation_codes_and_targets() {
+        let invalid = report().replace(
+            "<div>Generation Results</div>",
+            "<span class='icon-error elem'>CAN03000 (Invalid hardware layout)</span><span class='icon-error elem'>Set to derivative specific value.</span><span class='icon-parameter elem'>/ActiveEcuC/Can/CanConfigSet/CtrlA[0:CanChannelCanObjectStartIndex]</span><div>Generation Results</div>",
+        ).replace("<td>Errors</td><td>0", "<td>Errors</td><td>1");
+        let error = parse_report(&invalid, None).unwrap_err().to_string();
+        assert!(error.contains("CAN03000"));
+        assert!(error.contains("CtrlA[0:CanChannelCanObjectStartIndex]"));
+        assert!(error.contains("validation has 0 fatal error(s) and 1 error(s)"));
     }
 
     #[test]

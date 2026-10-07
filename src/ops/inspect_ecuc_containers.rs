@@ -4,7 +4,7 @@ use std::fs::File;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde::Serialize;
-use serde_json::{to_value, Value};
+use serde_json::{json, to_value, Value};
 use xmltree::{Element, XMLNode};
 
 use crate::project::SessionConfig;
@@ -26,6 +26,20 @@ struct ContainerSnapshot {
 }
 
 pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
+    let limit = request.get("limit").map_or(Some(32), Value::as_u64);
+    let offset = request.get("offset").map_or(Some(0), Value::as_u64);
+    let paged = request.get("paged").map_or(Some(false), Value::as_bool);
+    if !limit.is_some_and(|n| (1..=256).contains(&n)) {
+        bail!("limit must be an integer in 1..256");
+    }
+    if !offset.is_some_and(|n| usize::try_from(n).is_ok()) {
+        bail!("offset must be a nonnegative platform-sized integer");
+    }
+    let paged = paged.ok_or_else(|| anyhow::anyhow!("paged must be a boolean"))?;
+    if !paged && offset != Some(0) {
+        bail!("offset requires paged:true so continuation metadata is available");
+    }
+    let (limit, offset) = (limit.unwrap() as usize, offset.unwrap() as usize);
     let module = super::required_module(request)?;
     let definition_ref = optional_string(request, "definition_ref");
     let container = optional_string(request, "container");
@@ -40,13 +54,16 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
 
     let modules = ModuleIndex::load(config)?;
     let module_info = modules.find(module)?;
-    let root = Element::parse(File::open(&module_info.config_path).with_context(|| {
+    let file = File::open(&module_info.config_path).with_context(|| {
         format!(
             "cannot open ECUC configuration: {}",
             module_info.config_path.display()
         )
-    })?)
-    .with_context(|| {
+    })?;
+    if file.metadata()?.len() > 64 * 1024 * 1024 {
+        bail!("ECUC inspection file exceeds 64 MiB");
+    }
+    let root = Element::parse(file).with_context(|| {
         format!(
             "failed to parse ECUC configuration: {}",
             module_info.config_path.display()
@@ -64,7 +81,31 @@ pub fn execute(config: &SessionConfig, request: &Value) -> Result<Value> {
         requested_params.as_ref(),
         &mut snapshots,
     );
-    to_value(snapshots).context("serialize ECUC container snapshots")
+    let count = snapshots.len();
+    if !paged && count > limit {
+        return Err(crate::diagnostic::failure(
+            "INSPECTION_PAGE_REQUIRED",
+            "matching containers exceed the output limit",
+            "paged",
+            json!({"count":count,"limit":limit,"next":"Use paged:true with limit and offset, or narrow short_name_regex"}),
+        ));
+    }
+    let containers = snapshots
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
+    let result = if paged {
+        let next = offset.saturating_add(containers.len());
+        json!({"count":count,"containers":containers,"limit":limit,"offset":offset,
+            "truncated":next<count,"next_offset":if next<count {Some(next)} else {None}})
+    } else {
+        to_value(containers).context("serialize ECUC container snapshots")?
+    };
+    if serde_json::to_vec(&result)?.len() > 64 * 1024 {
+        bail!("ECUC inspection response exceeds 64 KiB; narrow params, short_name_regex or limit");
+    }
+    Ok(result)
 }
 
 #[allow(clippy::too_many_arguments)]

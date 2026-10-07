@@ -1,3 +1,4 @@
+pub mod generated_files;
 pub mod generation_report;
 pub mod module_index;
 pub mod param_definition_index;

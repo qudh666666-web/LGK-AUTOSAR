@@ -27,6 +27,10 @@ try {
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $initialPackage 'tests') -PathType Container)) 'release package must exclude development tests/'
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $initialPackage 'src') -PathType Container)) 'release package must exclude source/'
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $initialPackage 'docs') -PathType Container)) 'release package must exclude long source documentation/'
+    Assert-True (@(Get-ChildItem -LiteralPath $initialPackage -Recurse -Filter 'LGKNativeBooleanProbe.dvgroovy').Count -eq 0) 'release package must exclude the native experiment task'
+    Assert-True (@(Get-ChildItem -LiteralPath $initialPackage -Recurse -Filter 'Invoke-LGKNativeBooleanProbe.ps1').Count -eq 0) 'release package must exclude the maintainer native probe driver'
+    Assert-True (@(Get-ChildItem -LiteralPath $initialPackage -Recurse -Filter 'LGKAswAcceptance.dvgroovy').Count -eq 0) 'release package must exclude the native ASW acceptance task'
+    Assert-True (@(Get-ChildItem -LiteralPath $initialPackage -Recurse -Filter 'Invoke-LGKAswAcceptance.ps1').Count -eq 0) 'release package must exclude the maintainer ASW acceptance driver'
 
     # Repack from a public-source fixture, not from the user ZIP.  The ZIP
     # deliberately omits tests/open-source, while this test needs that guard
@@ -105,7 +109,7 @@ try {
 
     [pscustomobject]@{
         valid = $true
-        assertions = 13
+        assertions = 17
         ignored_customer_files_copied = 0
     } | ConvertTo-Json
 } finally {

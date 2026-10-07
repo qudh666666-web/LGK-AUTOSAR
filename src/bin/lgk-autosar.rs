@@ -21,6 +21,15 @@ fn run() -> anyhow::Result<()> {
     let raw = raw
         .into_string()
         .map_err(|_| anyhow::anyhow!("request argument is not valid Unicode"))?;
+    if raw == "--describe" {
+        if args.next().as_deref() != Some(std::ffi::OsStr::new("locate_container"))
+            || args.next().is_some()
+        {
+            anyhow::bail!("Usage: --describe locate_container");
+        }
+        println!("{}", lgk_autosar::ops::locate_container::contract());
+        return Ok(());
+    }
     if raw == "--version" || raw == "-V" {
         if args.next().is_some() {
             anyhow::bail!("--version does not accept another argument");
