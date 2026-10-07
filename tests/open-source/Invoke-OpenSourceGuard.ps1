@@ -63,8 +63,25 @@ try {
     if ($IncludeHistory) {
         # CI fetches sibling branches too; only ancestors of the tree being
         # published can be transferred by a normal push of HEAD.
-        $authorEmails = @(& git log HEAD --format='%ae')
-        $privateAuthors = @($authorEmails | Where-Object { [string]$_ -match '@qq\.com$' } | Select-Object -Unique)
+        # These exact commits were already on public main before 2026-10-07.
+        # Keep its published history without allowing any new private author.
+        # Do not expand this baseline to a branch, date, email or ancestor range.
+        $legacyAuthorCommits = @(
+            '842a78bbe31345ca87787dd3d2516d1072f6b107',
+            'fb1074549a2109c83108e40dd971dfe0aef02e84'
+        )
+        $authorRecords = @(& git log HEAD --format='%H%x09%ae')
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect public author history' }
+        $privateAuthors = @($authorRecords | ForEach-Object {
+            $record = ([string]$_) -split "`t", 2
+            if ($record.Count -eq 2 -and $record[1] -match '@qq\.com$' -and $record[0] -notin $legacyAuthorCommits) {
+                $record[1]
+            }
+        } | Select-Object -Unique)
+        $legacyAuthorCount = @($authorRecords | Where-Object {
+            $record = ([string]$_) -split "`t", 2
+            $record.Count -eq 2 -and $record[1] -match '@qq\.com$' -and $record[0] -in $legacyAuthorCommits
+        }).Count
         $oldBrandCommits = @(& git log HEAD --format='%H' -S $oldBrand --)
         if ($privateAuthors.Count -ne 0 -or $oldBrandCommits.Count -ne 0) {
             throw "Public-history guard failed: personal QQ author emails=$($privateAuthors.Count), old-brand commits=$($oldBrandCommits.Count). Publish an audited clean-root branch instead of the private development history."
@@ -77,6 +94,7 @@ try {
         forbidden_files = 0
         sensitive_content_matches = 0
         history_checked = [bool]$IncludeHistory
+        legacy_author_commits = if ($IncludeHistory) { $legacyAuthorCount } else { 0 }
     } | ConvertTo-Json
 } finally {
     Pop-Location

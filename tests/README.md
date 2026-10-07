@@ -32,7 +32,15 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --all-targets --locked
 & .\scripts\Build-LGKAutosar.ps1
 & .\tests\open-source\Invoke-DependencyLicenseGuard.ps1
+& .\tests\open-source\Invoke-HistoryGuardSmoke.ps1
 & .\tests\open-source\Invoke-OpenSourceGuard.ps1 -IncludeHistory
 & .\tests\open-source\Invoke-PackageManifestSmoke.ps1
 & .\tests\onboarding\Invoke-OnboardingSmoke.ps1
 ```
+
+The history guard retains two exact author-metadata exceptions for commits
+already published on main before 2026-10-07 (`842a78b`, `fb10745`). These do
+not exempt file contents, other commits, an email address or a whole branch.
+New private authors and historical private product values remain rejected;
+the regression smoke also confirms unrelated sibling history is excluded.
+Preserving those two commits does not remove their original email metadata.
